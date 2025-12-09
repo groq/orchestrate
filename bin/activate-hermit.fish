@@ -19,6 +19,6 @@ if status is-interactive
         echo "Hermit environment $($HERMIT_ENV/bin/hermit env HERMIT_ENV) activated"
     end
 else
-    echo "You must source this script: source $argv[0]" >&2
+    echo "You must source this script: source "(status filename) >&2
     exit 33
 end
