@@ -1,0 +1,35 @@
+# Orchestrate for Compound-lib
+
+# Default preset to use when --preset is not specified
+default: codex
+
+# Named presets
+presets:
+  standard:
+    - agent: droid
+      commands:
+        - command: ""
+    - agent: codex
+    - agent: codex
+
+  eval:
+    - agent: droid
+    - agent: claude
+    - agent: codex
+
+  parallel:
+    - n: 2
+    - agent: claude
+    - agent: codex
+    
+  codex:
+    - agent: codex
+      commands:
+        - command: "./bin/go run ./cmd/compound-lib"
+        - command: ""
+
+  droid:
+    - agent: droid
+      commands:
+        - command: "./bin/go run ./cmd/compound-lib"
+        - command: ""
