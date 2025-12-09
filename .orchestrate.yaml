@@ -1,0 +1,24 @@
+# Orchestrate configuration with presets
+
+# Default preset to use when --preset is not specified
+default: standard
+
+# Named presets
+presets:
+  standard:
+    agents:
+      - droid
+      - codex
+      - codex
+
+  mix:
+    agents:
+      - droid
+      - claude
+      - codex
+
+  heavy:
+    n: 2
+    agents:
+      - claude
+      - codex
