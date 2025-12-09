@@ -85,8 +85,21 @@ func main() {
 	var sessions []terminal.SessionInfo
 
 	for _, w := range windows {
+		// Skip invalid windows (e.g., standalone n: without agent)
+		if !w.IsValid() {
+			log.Printf("⚠️  Skipping invalid window config (missing agent). Did you mean to put 'n: %d' as a field on an agent?", w.N)
+			continue
+		}
+
+		// Determine the effective multiplier for this window
+		// CLI --n overrides per-window n, otherwise use window's n (defaults to 1)
+		effectiveN := w.GetN()
+		if multiplier > 1 {
+			effectiveN = multiplier
+		}
+
 		// For each agent, create worktrees (respecting multiplier)
-		for i := 0; i < multiplier; i++ {
+		for i := 0; i < effectiveN; i++ {
 			suffix := util.RandomHex(4)
 			branchName := fmt.Sprintf("%s-%s", *name, suffix)
 			worktreePath := filepath.Join(worktreesDir, fmt.Sprintf("%s-%s", filepath.Base(repoRoot), branchName))

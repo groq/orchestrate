@@ -1,4 +1,4 @@
-# Orchestrate for Compound-lib
+# Orchestrate configuration with presets
 
 # Default preset to use when --preset is not specified
 default: codex
@@ -18,9 +18,10 @@ presets:
     - agent: codex
 
   parallel:
-    - n: 2
     - agent: claude
+      n: 2
     - agent: codex
+      n: 2
     
   codex:
     - agent: codex

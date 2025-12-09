@@ -35,12 +35,27 @@ func (c Command) GetTitle() string {
 // Window represents a single agent configuration with optional commands.
 type Window struct {
 	Agent    string    `yaml:"agent,omitempty"`    // Agent name (e.g., "claude", "codex")
+	N        int       `yaml:"n,omitempty"`        // Multiplier for this agent (default 1)
 	Commands []Command `yaml:"commands,omitempty"` // Commands to run in this agent's worktree
+}
+
+// GetN returns the multiplier for this window (defaults to 1 if not set).
+func (w Window) GetN() int {
+	if w.N <= 0 {
+		return 1
+	}
+	return w.N
 }
 
 // HasCommands returns true if this agent has associated commands.
 func (w Window) HasCommands() bool {
 	return len(w.Commands) > 0
+}
+
+// IsValid returns true if this window has a valid configuration.
+// A valid window must have an agent name.
+func (w Window) IsValid() bool {
+	return w.Agent != ""
 }
 
 // Preset is an ordered list of agent windows.

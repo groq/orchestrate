@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+// TestBuildAgentCommand_EmptyAgent documents the behavior when agent is empty.
+// This case is now caught upstream by config.Window.IsValid() in main.go,
+// so it should never reach BuildAgentCommand in practice.
+// This test ensures we understand and document the behavior.
+func TestBuildAgentCommand_EmptyAgent(t *testing.T) {
+	session := SessionInfo{
+		Path:   "/path/to/worktree",
+		Branch: "test-branch",
+		Agent:  "", // Empty agent - should be caught by IsValid() upstream
+	}
+
+	cmd := BuildAgentCommand(session, "Fix the bug")
+
+	// Document: empty agent produces these patterns (caught upstream now)
+	// - Title: ": branch" (empty before colon)
+	// - Command: "&&  'prompt'" (double space, no agent)
+	if !strings.Contains(cmd, "\\033]0;: ") {
+		t.Logf("Expected title pattern with empty agent, got: %s", cmd)
+	}
+
+	// The important thing is the command ends properly (doesn't crash)
+	if !strings.HasSuffix(cmd, "\n") {
+		t.Errorf("Command should end with newline, got: %s", cmd)
+	}
+}
+
 func TestBuildAgentCommand(t *testing.T) {
 	tests := []struct {
 		name      string

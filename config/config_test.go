@@ -477,6 +477,231 @@ presets:
 	}
 }
 
+func TestWindow_GetN(t *testing.T) {
+	tests := []struct {
+		name   string
+		window Window
+		want   int
+	}{
+		{"no n specified", Window{Agent: "claude"}, 1},
+		{"n is zero", Window{Agent: "claude", N: 0}, 1},
+		{"n is negative", Window{Agent: "claude", N: -1}, 1},
+		{"n is 1", Window{Agent: "claude", N: 1}, 1},
+		{"n is 2", Window{Agent: "claude", N: 2}, 2},
+		{"n is 3", Window{Agent: "claude", N: 3}, 3},
+		{"n is 10", Window{Agent: "claude", N: 10}, 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.window.GetN(); got != tt.want {
+				t.Errorf("GetN() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadFromBytes_WithNMultiplier(t *testing.T) {
+	yaml := `
+presets:
+  parallel:
+    - agent: claude
+      n: 3
+    - agent: codex
+      n: 2
+    - agent: droid
+`
+	cfg, err := LoadFromBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("LoadFromBytes failed: %v", err)
+	}
+
+	preset, ok := cfg.GetPreset("parallel")
+	if !ok {
+		t.Fatal("Preset 'parallel' not found")
+	}
+
+	if len(preset) != 3 {
+		t.Fatalf("len(preset) = %d, want 3", len(preset))
+	}
+
+	// First agent has n: 3
+	if preset[0].Agent != "claude" {
+		t.Errorf("preset[0].Agent = %q, want 'claude'", preset[0].Agent)
+	}
+	if preset[0].N != 3 {
+		t.Errorf("preset[0].N = %d, want 3", preset[0].N)
+	}
+	if preset[0].GetN() != 3 {
+		t.Errorf("preset[0].GetN() = %d, want 3", preset[0].GetN())
+	}
+
+	// Second agent has n: 2
+	if preset[1].Agent != "codex" {
+		t.Errorf("preset[1].Agent = %q, want 'codex'", preset[1].Agent)
+	}
+	if preset[1].N != 2 {
+		t.Errorf("preset[1].N = %d, want 2", preset[1].N)
+	}
+	if preset[1].GetN() != 2 {
+		t.Errorf("preset[1].GetN() = %d, want 2", preset[1].GetN())
+	}
+
+	// Third agent has no n (defaults to 1)
+	if preset[2].Agent != "droid" {
+		t.Errorf("preset[2].Agent = %q, want 'droid'", preset[2].Agent)
+	}
+	if preset[2].N != 0 {
+		t.Errorf("preset[2].N = %d, want 0", preset[2].N)
+	}
+	if preset[2].GetN() != 1 {
+		t.Errorf("preset[2].GetN() = %d, want 1", preset[2].GetN())
+	}
+}
+
+func TestLoadFromBytes_WithNAndCommands(t *testing.T) {
+	yaml := `
+presets:
+  combo:
+    - agent: claude
+      n: 2
+      commands:
+        - command: "npm run dev"
+          title: "Dev Server"
+        - command: ""
+          title: "Shell"
+`
+	cfg, err := LoadFromBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("LoadFromBytes failed: %v", err)
+	}
+
+	preset, ok := cfg.GetPreset("combo")
+	if !ok {
+		t.Fatal("Preset 'combo' not found")
+	}
+
+	if len(preset) != 1 {
+		t.Fatalf("len(preset) = %d, want 1", len(preset))
+	}
+
+	agent := preset[0]
+	if agent.Agent != "claude" {
+		t.Errorf("Agent = %q, want 'claude'", agent.Agent)
+	}
+	if agent.GetN() != 2 {
+		t.Errorf("GetN() = %d, want 2", agent.GetN())
+	}
+	if !agent.HasCommands() {
+		t.Error("Should have commands")
+	}
+	if len(agent.Commands) != 2 {
+		t.Errorf("len(Commands) = %d, want 2", len(agent.Commands))
+	}
+
+	// Verify commands
+	if agent.Commands[0].Command != "npm run dev" {
+		t.Errorf("Commands[0].Command = %q, want 'npm run dev'", agent.Commands[0].Command)
+	}
+	if agent.Commands[1].Command != "" {
+		t.Errorf("Commands[1].Command = %q, want ''", agent.Commands[1].Command)
+	}
+}
+
+// TestLoadFromBytes_NMultiplierPreservesAgent verifies that when using n multiplier,
+// the agent name is properly preserved for all iterations.
+// This is a regression test for the bug where n > 1 would lose the agent name.
+func TestLoadFromBytes_NMultiplierPreservesAgent(t *testing.T) {
+	yaml := `
+presets:
+  scale:
+    - agent: droid
+      n: 3
+`
+	cfg, err := LoadFromBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("LoadFromBytes failed: %v", err)
+	}
+
+	preset, ok := cfg.GetPreset("scale")
+	if !ok {
+		t.Fatal("Preset 'scale' not found")
+	}
+
+	if len(preset) != 1 {
+		t.Fatalf("len(preset) = %d, want 1 (single window config with n=3)", len(preset))
+	}
+
+	window := preset[0]
+
+	// CRITICAL: Agent must NOT be empty
+	if window.Agent == "" {
+		t.Fatal("REGRESSION: Agent is empty! This causes the prompt to be executed as a command instead of being passed to the agent")
+	}
+
+	if window.Agent != "droid" {
+		t.Errorf("Agent = %q, want 'droid'", window.Agent)
+	}
+
+	if window.GetN() != 3 {
+		t.Errorf("GetN() = %d, want 3", window.GetN())
+	}
+}
+
+// TestLoadFromBytes_StandaloneN_BugCase tests the bug case where n is a separate
+// list item instead of a field on an agent window.
+// YAML like this is INVALID and should be caught:
+//
+//	parallel:
+//	  - n: 2        # WRONG - no agent!
+//	  - agent: claude
+//
+// Correct format is:
+//
+//	parallel:
+//	  - agent: claude
+//	    n: 2
+func TestLoadFromBytes_StandaloneN_BugCase(t *testing.T) {
+	yaml := `
+presets:
+  parallel:
+    - n: 2
+    - agent: claude
+`
+	cfg, err := LoadFromBytes([]byte(yaml))
+	if err != nil {
+		t.Fatalf("LoadFromBytes failed: %v", err)
+	}
+
+	preset, ok := cfg.GetPreset("parallel")
+	if !ok {
+		t.Fatal("Preset 'parallel' not found")
+	}
+
+	// This parses as 2 windows: one with n=2 (no agent!) and one with agent=claude
+	if len(preset) != 2 {
+		t.Fatalf("len(preset) = %d, want 2", len(preset))
+	}
+
+	// First window has NO AGENT - this is the bug!
+	if preset[0].Agent != "" {
+		t.Errorf("First window Agent = %q, expected empty (bug case)", preset[0].Agent)
+	}
+
+	// The IsValid method should catch this
+	if preset[0].IsValid() {
+		t.Error("Window with no agent should NOT be valid")
+	}
+
+	// Second window is fine
+	if preset[1].Agent != "claude" {
+		t.Errorf("Second window Agent = %q, want 'claude'", preset[1].Agent)
+	}
+	if !preset[1].IsValid() {
+		t.Error("Window with agent should be valid")
+	}
+}
+
 func TestLoadFromBytes_MultipleAgentsSameType(t *testing.T) {
 	yaml := `
 presets:

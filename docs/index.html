@@ -383,7 +383,7 @@
 <body>
     <div class="hero">
         <h1>Orchestrate</h1>
-        <p class="tagline">Run multiple AI coding agents in parallel, each in their own git worktree</p>
+        <p class="tagline">Run AI coding agents, custom dev environments, or both — each in their own git worktree</p>
         <div class="hero-visual">
             <div class="agent-badge"><span class="agent-dot dot-droid"></span>droid</div>
             <div class="agent-badge"><span class="agent-dot dot-claude"></span>claude</div>
@@ -394,13 +394,47 @@
     <div class="container">
         <section>
             <h2>Quick Start</h2>
-            <p>Get up and running in seconds. Run this command from any git repository:</p>
+            <p><strong>1. Create <code class="inline-code">.orchestrate.yaml</code> in your repo:</strong></p>
+
+            <pre data-lang="yaml"><code><span class="token-key">default</span>: <span class="token-value">default</span>
+
+<span class="token-key">presets</span>:
+  <span class="token-comment"># Simple: just an agent</span>
+  <span class="token-key">default</span>:
+    - <span class="token-key">agent</span>: <span class="token-value">claude</span>
+
+  <span class="token-comment"># Complex: agent with dev server, tests, and shell</span>
+  <span class="token-key">fullstack</span>:
+    - <span class="token-key">agent</span>: <span class="token-value">claude</span>
+      <span class="token-key">commands</span>:
+        - <span class="token-key">command</span>: <span class="token-value">"npm run dev"</span>
+          <span class="token-key">title</span>: <span class="token-value">"Dev Server"</span>
+        - <span class="token-key">command</span>: <span class="token-value">"npm run test:watch"</span>
+          <span class="token-key">title</span>: <span class="token-value">"Tests"</span>
+        - <span class="token-key">command</span>: <span class="token-value">""</span>
+          <span class="token-key">title</span>: <span class="token-value">"Shell"</span>
+
+  <span class="token-comment"># Multi-agent: compare different agents on the same task</span>
+  <span class="token-key">compare</span>:
+    - <span class="token-key">agent</span>: <span class="token-value">droid</span>
+    - <span class="token-key">agent</span>: <span class="token-value">claude</span>
+    - <span class="token-key">agent</span>: <span class="token-value">codex</span>
+
+  <span class="token-comment"># Best of n: use n to run multiple instances of an agent</span>
+  <span class="token-key">scale</span>:
+    - <span class="token-key">agent</span>: <span class="token-value">claude</span>
+      <span class="token-key">n</span>: <span class="token-value">3</span></code></pre>
+
+            <p><strong>2. Run from the repo:</strong></p>
 
             <pre
-                data-lang="bash"><code><span class="token-comment"># Launch agents to fix a bug</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span></code></pre>
+                data-lang="bash"><code><span class="token-comment"># Use default preset</span>
+orchestrate <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span>
 
-            <p>This creates isolated git worktrees and launches each agent in a separate iTerm2 pane.</p>
+<span class="token-comment"># Or use the fullstack preset</span>
+orchestrate <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span> <span class="token-flag">--preset</span> <span class="token-string">fullstack</span></code></pre>
+
+            <p>This creates isolated git worktrees and launches agents/commands in separate iTerm2 panes.</p>
 
             <div class="flow">
                 <div class="flow-step">
@@ -428,13 +462,7 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">fi
         <section>
             <h2>Installation</h2>
 
-            <pre data-lang="bash"><code><span class="token-comment"># Clone and build</span>
-git clone https://github.com/your-org/orchestrate
-cd orchestrate
-go build -o orchestrate .
-
-<span class="token-comment"># Move to your PATH</span>
-mv orchestrate /usr/local/bin/</code></pre>
+            <pre data-lang="bash"><code>go install github.com/groq/orchestrate@latest</code></pre>
 
             <p><strong>Requirements:</strong> macOS with iTerm2, Go 1.21+, and your preferred AI coding agents
                 installed.</p>
@@ -484,8 +512,8 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">fe
 
             <h3>Using Presets</h3>
             <pre
-                data-lang="bash"><code><span class="token-comment"># Use the "heavy" preset</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">big-task</span> <span class="token-flag">--preset</span> <span class="token-string">heavy</span> <span class="token-flag">--prompt</span> <span class="token-string">"Implement full test coverage"</span></code></pre>
+                data-lang="bash"><code><span class="token-comment"># Use the "dev" preset with commands</span>
+orchestrate <span class="token-flag">--name</span> <span class="token-string">big-task</span> <span class="token-flag">--preset</span> <span class="token-string">dev</span> <span class="token-flag">--prompt</span> <span class="token-string">"Implement full test coverage"</span></code></pre>
 
             <h3>Scale with Multiplier</h3>
             <pre
@@ -529,72 +557,86 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">ma
 <span class="token-comment"># Default preset when --preset is not specified</span>
 <span class="token-key">default</span>: <span class="token-value">standard</span>
 
-<span class="token-comment"># Presets are lists of windows (agents or custom commands)</span>
+<span class="token-comment"># Presets define agents and their associated commands</span>
 <span class="token-key">presets</span>:
+  <span class="token-comment"># Simple: just agents</span>
   <span class="token-key">standard</span>:
     - <span class="token-key">agent</span>: <span class="token-value">droid</span>
     - <span class="token-key">agent</span>: <span class="token-value">codex</span>
     - <span class="token-key">agent</span>: <span class="token-value">codex</span>
 
-  <span class="token-key">mix</span>:
-    - <span class="token-key">agent</span>: <span class="token-value">droid</span>
-    - <span class="token-key">agent</span>: <span class="token-value">claude</span>
-    - <span class="token-key">agent</span>: <span class="token-value">codex</span></code></pre>
+  <span class="token-comment"># With commands: agents + terminals in their worktrees</span>
+  <span class="token-key">dev</span>:
+    - <span class="token-key">agent</span>: <span class="token-value">codex</span>
+      <span class="token-key">commands</span>:
+        - <span class="token-key">command</span>: <span class="token-value">"./bin/go run ./cmd/myapp"</span>
+          <span class="token-key">title</span>: <span class="token-value">"App"</span>
+        - <span class="token-key">command</span>: <span class="token-value">""</span>
+          <span class="token-key">title</span>: <span class="token-value">"Terminal"</span></code></pre>
 
-            <h3>Custom Commands</h3>
-            <p>Mix agents with custom commands. Order is preserved exactly as defined:</p>
+            <h3>Agents with Commands</h3>
+            <p>Each agent can have commands that run in its worktree. Commands are nested under the agent:</p>
 
             <pre data-lang="yaml"><code><span class="token-key">presets</span>:
   <span class="token-key">dev</span>:
-    <span class="token-comment"># Start dev server first</span>
-    - <span class="token-key">command</span>: <span class="token-value">"npm run dev"</span>
-      <span class="token-key">title</span>: <span class="token-value">"Dev Server"</span>
-      <span class="token-key">color</span>: <span class="token-value">"#00ff00"</span>
-    
-    <span class="token-comment"># Then an AI agent</span>
     - <span class="token-key">agent</span>: <span class="token-value">claude</span>
+      <span class="token-key">commands</span>:
+        <span class="token-comment"># These run in claude's worktree</span>
+        - <span class="token-key">command</span>: <span class="token-value">"npm run dev"</span>
+          <span class="token-key">title</span>: <span class="token-value">"Dev Server"</span>
+          <span class="token-key">color</span>: <span class="token-value">"#00ff00"</span>
+        - <span class="token-key">command</span>: <span class="token-value">"npm run test:watch"</span>
+          <span class="token-key">title</span>: <span class="token-value">"Tests"</span>
+          <span class="token-key">color</span>: <span class="token-value">"#ffff00"</span>
     
-    <span class="token-comment"># Then test watcher</span>
-    - <span class="token-key">command</span>: <span class="token-value">"npm run test:watch"</span>
-      <span class="token-key">title</span>: <span class="token-value">"Tests"</span>
-      <span class="token-key">color</span>: <span class="token-value">"#ffff00"</span>
-    
-    <span class="token-comment"># Another agent</span>
-    - <span class="token-key">agent</span>: <span class="token-value">codex</span></code></pre>
+    - <span class="token-key">agent</span>: <span class="token-value">codex</span>
+      <span class="token-key">commands</span>:
+        <span class="token-comment"># Opens an empty terminal in codex's worktree</span>
+        - <span class="token-key">command</span>: <span class="token-value">""</span>
+          <span class="token-key">title</span>: <span class="token-value">"Terminal"</span></code></pre>
 
+            <h3>Agent Options</h3>
             <div class="card">
-                <h4>📋 Window Options</h4>
                 <table class="flag-table">
                     <tbody>
                         <tr>
                             <td>agent</td>
-                            <td>Agent name to run (e.g., <code class="inline-code">claude</code>, <code
-                                    class="inline-code">codex</code>, <code class="inline-code">droid</code>)</td>
+                            <td>Agent name (droid, claude, codex)</td>
                         </tr>
                         <tr>
+                            <td>n</td>
+                            <td>Multiplier: run this agent N times (default: 1)</td>
+                        </tr>
+                        <tr>
+                            <td>commands</td>
+                            <td>List of commands to run in this agent's worktree</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Command Options</h3>
+            <div class="card">
+                <table class="flag-table">
+                    <tbody>
+                        <tr>
                             <td>command</td>
-                            <td>Custom shell command to run instead of an agent</td>
+                            <td>Shell command to run (empty string = just open terminal)</td>
                         </tr>
                         <tr>
                             <td>title</td>
-                            <td>Custom title for the terminal tab (optional)</td>
-                        </tr>
-                        <tr>
-                            <td>dir</td>
-                            <td>Working directory for the command (optional)</td>
+                            <td>Custom title for the terminal tab</td>
                         </tr>
                         <tr>
                             <td>color</td>
-                            <td>Hex color for the tab, e.g., <code class="inline-code">#ff8800</code> (optional)</td>
+                            <td>Hex color for the tab, e.g., <code class="inline-code">#ff8800</code></td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
             <div class="tip">
-                Custom command windows don't create worktrees—they run in the current directory (or the specified <code
-                    class="inline-code">dir</code>). The <code class="inline-code">--n</code> multiplier only applies to
-                agent windows.
+                Commands always run in their parent agent's worktree and show the branch name in the title.
             </div>
         </section>
 
@@ -625,12 +667,13 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">ma
 📂 Repo: /path/to/project
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
-🖥️  Custom window: Dev Server
 ✅ Created worktree: .../project-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: claude)
-🖥️  Custom window: Tests
+   🖥️  Command: Dev Server (branch: fix-auth-a3f2)
+   🖥️  Command: Tests (branch: fix-auth-a3f2)
 ✅ Created worktree: .../project-fix-auth-b7c1 (branch: fix-auth-b7c1, agent: codex)
+   🖥️  Command: Terminal (branch: fix-auth-b7c1)
 
-✨ Started 4 session(s) in 1 window(s)!</span></code></pre>
+✨ Started 5 session(s) in 1 window(s)!</span></code></pre>
         </section>
 
         <section>
