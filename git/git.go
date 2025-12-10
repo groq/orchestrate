@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -91,4 +92,78 @@ func CreateWorktreeWithCmd(cmd Commander, repoRoot, worktreePath, branchName, ba
 func WorktreeExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// EnsureRepo ensures a GitHub repo is cloned and up-to-date with the main branch.
+// repoSpec is in the format "owner/repo" (e.g., "groq/openbench").
+// baseDir is where repos will be stored.
+// Returns the path to the local repo directory.
+func EnsureRepo(repoSpec, baseDir string) (string, error) {
+	return EnsureRepoWithCmd(defaultCmd, repoSpec, baseDir)
+}
+
+// EnsureRepoWithCmd ensures a repo is cloned and up-to-date using a custom commander.
+func EnsureRepoWithCmd(cmd Commander, repoSpec, baseDir string) (string, error) {
+	// Parse repo spec
+	parts := strings.Split(repoSpec, "/")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid repo format: %q (expected 'owner/repo')", repoSpec)
+	}
+	owner, repo := parts[0], parts[1]
+
+	// Build GitHub URL
+	repoURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
+
+	// Create base directory if needed
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create repos directory: %w", err)
+	}
+
+	// Local path for this repo
+	repoPath := filepath.Join(baseDir, fmt.Sprintf("%s-%s", owner, repo))
+
+	// Check if repo already exists
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
+		// Repo exists, fetch and reset to origin/main
+		if err := FetchAndResetWithCmd(cmd, repoPath); err != nil {
+			return "", fmt.Errorf("failed to update repo: %w", err)
+		}
+		return repoPath, nil
+	}
+
+	// Clone the repo
+	out, err := cmd.Run("", "clone", repoURL, repoPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to clone repo: %v: %s", err, out)
+	}
+
+	return repoPath, nil
+}
+
+// FetchAndReset fetches from origin and resets to origin/main.
+func FetchAndReset(repoPath string) error {
+	return FetchAndResetWithCmd(defaultCmd, repoPath)
+}
+
+// FetchAndResetWithCmd fetches and resets using a custom commander.
+func FetchAndResetWithCmd(cmd Commander, repoPath string) error {
+	// Fetch latest from origin
+	out, err := cmd.Run(repoPath, "fetch", "origin", "main")
+	if err != nil {
+		return fmt.Errorf("fetch failed: %v: %s", err, out)
+	}
+
+	// Reset to origin/main
+	out, err = cmd.Run(repoPath, "reset", "--hard", "origin/main")
+	if err != nil {
+		return fmt.Errorf("reset failed: %v: %s", err, out)
+	}
+
+	// Clean untracked files
+	out, err = cmd.Run(repoPath, "clean", "-fd")
+	if err != nil {
+		return fmt.Errorf("clean failed: %v: %s", err, out)
+	}
+
+	return nil
 }

@@ -3,6 +3,8 @@ package util
 import (
 	"bytes"
 	"io"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -157,6 +159,33 @@ func TestRandomHex_ValidHexOutput(t *testing.T) {
 			if !found {
 				t.Errorf("RandomHex(%d)[%d] = %c, not a valid hex char", size, i, c)
 			}
+		}
+	}
+}
+
+func TestDataDir(t *testing.T) {
+	dir, err := DataDir()
+	if err != nil {
+		t.Fatalf("DataDir() error = %v", err)
+	}
+
+	if dir == "" {
+		t.Error("DataDir() returned empty string")
+	}
+
+	// Verify platform-specific expectations
+	switch runtime.GOOS {
+	case "darwin":
+		if !strings.Contains(dir, "Library/Application Support/Orchestrate") {
+			t.Errorf("DataDir() on macOS = %q, want to contain 'Library/Application Support/Orchestrate'", dir)
+		}
+	case "windows":
+		if !strings.Contains(dir, "Orchestrate") {
+			t.Errorf("DataDir() on Windows = %q, want to contain 'Orchestrate'", dir)
+		}
+	default: // Linux
+		if !strings.Contains(dir, "orchestrate") {
+			t.Errorf("DataDir() on Linux = %q, want to contain 'orchestrate'", dir)
 		}
 	}
 }

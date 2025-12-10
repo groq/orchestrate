@@ -16,7 +16,7 @@
 
 ## ⚡ Quick Start
 
-**1. Create `.orchestrate.yaml` in your repo:**
+**1. Create `.orchestrate.yaml` in your working directory:**
 
 ```yaml
 default: default
@@ -49,23 +49,23 @@ presets:
       n: 3
 ```
 
-**2. Run from the repo:**
+**2. Run with a GitHub repo:**
 
 ```bash
 # Use default preset
-orchestrate --name fix-bug --prompt "Fix the login timeout issue"
+orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue"
 
 # Or use the fullstack preset
-orchestrate --name fix-bug --prompt "Fix the login timeout issue" --preset fullstack
+orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue" --preset fullstack
 ```
 
-This creates isolated git worktrees and launches agents/commands in separate iTerm2 panes.
+This clones/updates the repo from the main branch, creates isolated git worktrees, and launches agents/commands in separate iTerm2 panes.
 
 <br>
 
 <div align="center">
 
-📁 **Creates worktrees** → 🖥️ **Opens iTerm2 panes** → 🤖 **Launches agents** → ✨ **Parallel coding**
+📦 **Clones/updates repo** → 📁 **Creates worktrees** → 🖥️ **Opens iTerm2 panes** → 🤖 **Launches agents** → ✨ **Parallel coding**
 
 </div>
 
@@ -85,6 +85,7 @@ go install github.com/groq/orchestrate@latest
 
 | Flag | Description |
 |------|-------------|
+| `--repo` | **Required.** GitHub repo to clone (e.g., `groq/openbench`). Clones fresh or updates from main branch. |
 | `--name` | **Required.** Branch name prefix for worktrees. Each branch gets a unique hex suffix. |
 | `--prompt` | **Required.** The prompt to pass to each agent. |
 | `--preset` | Use a preset from `.orchestrate.yaml`. Defaults to the config's default preset. |
@@ -114,7 +115,7 @@ presets:
 ```
 
 ```bash
-orchestrate --name feature-auth --prompt "Add OAuth2 login"
+orchestrate --repo myorg/myapp --name feature-auth --prompt "Add OAuth2 login"
 ```
 
 ### 🔬 Evaluate Multiple Agents — Compare how droid/claude/codex solve the same problem
@@ -130,7 +131,7 @@ presets:
 ```
 
 ```bash
-orchestrate --name eval-refactor --preset eval --prompt "Refactor the database layer"
+orchestrate --repo myorg/myapp --name eval-refactor --preset eval --prompt "Refactor the database layer"
 # Compare branches: eval-refactor-a3f2, eval-refactor-b7c1, eval-refactor-d9e4
 ```
 
@@ -146,7 +147,7 @@ presets:
 ```
 
 ```bash
-orchestrate --name big-task --preset heavy --n 3 --prompt "Add comprehensive test coverage"
+orchestrate --repo myorg/myapp --name big-task --preset heavy --n 3 --prompt "Add comprehensive test coverage"
 # Creates 6 worktrees: 3 claude, 3 codex
 ```
 
@@ -190,7 +191,7 @@ Agents must be installed and available in your PATH.
 
 ## ⚙️ Configuration
 
-Create `.orchestrate.yaml` in your project root:
+Create `.orchestrate.yaml` in your working directory (where you run orchestrate from):
 
 ```yaml
 # Default preset when --preset is not specified
@@ -227,19 +228,30 @@ presets:
 
 ## 🔄 How It Works
 
-1. **Git Worktrees** — Creates isolated worktrees in `../orchestrator-worktrees/`, each with a unique branch
-2. **iTerm2 Integration** — Opens windows with up to 6 panes in a grid, color-coded by agent
-3. **Parallel Execution** — Agents work simultaneously; compare branches and merge the best
+1. **Clone & Update** — Clones the specified GitHub repo (or updates if it already exists), always fetching the latest from main
+2. **Git Worktrees** — Creates isolated worktrees, each with a unique branch based on main
+3. **iTerm2 Integration** — Opens windows with up to 6 panes in a grid, color-coded by agent
+4. **Parallel Execution** — Agents work simultaneously; compare branches and merge the best
+
+**Data Location:**
+- macOS: `~/Library/Application Support/Orchestrate/`
+- Linux: `~/.local/share/orchestrate/` (or `$XDG_DATA_HOME/orchestrate`)
+- Windows: `%APPDATA%\Orchestrate`
+
+Inside this directory:
+- `repos/` — Cloned repositories
+- `worktrees/` — Git worktrees for agent sessions
 
 **Example Output:**
 
 ```
-⚙️  Config: /path/to/project/.orchestrate.yaml
-📦 Preset: dev
-📂 Repo: /path/to/project
+⚙️  Config: /path/to/.orchestrate.yaml
+📦 Repo: groq/openbench
+🔄 Fetching latest from main branch...
+📂 Local path: ~/Library/Application Support/Orchestrate/repos/groq-openbench
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
-✅ Created worktree: .../project-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: codex)
+✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: codex)
    🖥️  Command: App (branch: fix-auth-a3f2)
    🖥️  Command: Terminal (branch: fix-auth-a3f2)
 

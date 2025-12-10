@@ -394,7 +394,8 @@
     <div class="container">
         <section>
             <h2>Quick Start</h2>
-            <p><strong>1. Create <code class="inline-code">.orchestrate.yaml</code> in your repo:</strong></p>
+            <p><strong>1. Create <code class="inline-code">.orchestrate.yaml</code> in your working directory:</strong>
+            </p>
 
             <pre data-lang="yaml"><code><span class="token-key">default</span>: <span class="token-value">default</span>
 
@@ -425,18 +426,24 @@
     - <span class="token-key">agent</span>: <span class="token-value">claude</span>
       <span class="token-key">n</span>: <span class="token-value">3</span></code></pre>
 
-            <p><strong>2. Run from the repo:</strong></p>
+            <p><strong>2. Run with a GitHub repo:</strong></p>
 
             <pre
                 data-lang="bash"><code><span class="token-comment"># Use default preset</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span>
+orchestrate <span class="token-flag">--repo</span> <span class="token-string">groq/openbench</span> <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span>
 
 <span class="token-comment"># Or use the fullstack preset</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span> <span class="token-flag">--preset</span> <span class="token-string">fullstack</span></code></pre>
+orchestrate <span class="token-flag">--repo</span> <span class="token-string">groq/openbench</span> <span class="token-flag">--name</span> <span class="token-string">fix-bug</span> <span class="token-flag">--prompt</span> <span class="token-string">"Fix the login timeout issue"</span> <span class="token-flag">--preset</span> <span class="token-string">fullstack</span></code></pre>
 
-            <p>This creates isolated git worktrees and launches agents/commands in separate iTerm2 panes.</p>
+            <p>This clones/updates the repo from the main branch, creates isolated git worktrees, and launches
+                agents/commands in separate iTerm2 panes.</p>
 
             <div class="flow">
+                <div class="flow-step">
+                    <div class="icon">📦</div>
+                    <div class="label">Clones/updates repo</div>
+                </div>
+                <span class="flow-arrow">→</span>
                 <div class="flow-step">
                     <div class="icon">📁</div>
                     <div class="label">Creates worktrees</div>
@@ -450,11 +457,6 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">fi
                 <div class="flow-step">
                     <div class="icon">🤖</div>
                     <div class="label">Launches agents</div>
-                </div>
-                <span class="flow-arrow">→</span>
-                <div class="flow-step">
-                    <div class="icon">✨</div>
-                    <div class="label">Parallel coding</div>
                 </div>
             </div>
         </section>
@@ -479,6 +481,12 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">fi
                     </tr>
                 </thead>
                 <tbody>
+                    <tr>
+                        <td>--repo</td>
+                        <td><strong>Required.</strong> GitHub repo to clone (e.g., <code
+                                class="inline-code">groq/openbench</code>). Clones fresh or updates from main branch.
+                        </td>
+                    </tr>
                     <tr>
                         <td>--name</td>
                         <td><strong>Required.</strong> Branch name prefix for worktrees. Each branch gets a unique hex
@@ -508,17 +516,17 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">fi
             <h3>Basic Usage</h3>
             <pre
                 data-lang="bash"><code><span class="token-comment"># Use default preset</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">feature-auth</span> <span class="token-flag">--prompt</span> <span class="token-string">"Add OAuth2 login"</span></code></pre>
+orchestrate <span class="token-flag">--repo</span> <span class="token-string">myorg/myapp</span> <span class="token-flag">--name</span> <span class="token-string">feature-auth</span> <span class="token-flag">--prompt</span> <span class="token-string">"Add OAuth2 login"</span></code></pre>
 
             <h3>Using Presets</h3>
             <pre
                 data-lang="bash"><code><span class="token-comment"># Use the "dev" preset with commands</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">big-task</span> <span class="token-flag">--preset</span> <span class="token-string">dev</span> <span class="token-flag">--prompt</span> <span class="token-string">"Implement full test coverage"</span></code></pre>
+orchestrate <span class="token-flag">--repo</span> <span class="token-string">myorg/myapp</span> <span class="token-flag">--name</span> <span class="token-string">big-task</span> <span class="token-flag">--preset</span> <span class="token-string">dev</span> <span class="token-flag">--prompt</span> <span class="token-string">"Implement full test coverage"</span></code></pre>
 
             <h3>Scale with Multiplier</h3>
             <pre
                 data-lang="bash"><code><span class="token-comment"># Run each agent in the preset 3 times</span>
-orchestrate <span class="token-flag">--name</span> <span class="token-string">massive</span> <span class="token-flag">--preset</span> <span class="token-string">mix</span> <span class="token-flag">--n</span> <span class="token-string">3</span> <span class="token-flag">--prompt</span> <span class="token-string">"Optimize queries"</span></code></pre>
+orchestrate <span class="token-flag">--repo</span> <span class="token-string">myorg/myapp</span> <span class="token-flag">--name</span> <span class="token-string">massive</span> <span class="token-flag">--preset</span> <span class="token-string">mix</span> <span class="token-flag">--n</span> <span class="token-string">3</span> <span class="token-flag">--prompt</span> <span class="token-string">"Optimize queries"</span></code></pre>
 
             <div class="tip">
                 Each agent runs in its own git branch, so they won't conflict. Compare results and pick the best
@@ -550,7 +558,8 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">ma
 
         <section>
             <h2>Configuration</h2>
-            <p>Create <code class="inline-code">.orchestrate.yaml</code> in your project root to define presets:</p>
+            <p>Create <code class="inline-code">.orchestrate.yaml</code> in your working directory (where you run
+                orchestrate from) to define presets:</p>
 
             <pre data-lang="yaml"><code><span class="token-comment"># .orchestrate.yaml</span>
 
@@ -644,33 +653,48 @@ orchestrate <span class="token-flag">--name</span> <span class="token-string">ma
             <h2>How It Works</h2>
 
             <div class="card">
-                <h4>1. Git Worktrees</h4>
-                <p>Orchestrate creates isolated git worktrees in <code
-                        class="inline-code">../orchestrator-worktrees/</code>. Each agent gets a new branch based on
-                    your current branch.</p>
+                <h4>1. Clone & Update</h4>
+                <p>Orchestrate clones the specified GitHub repo (or updates if it already exists), always fetching the
+                    latest from the main branch.</p>
             </div>
 
             <div class="card">
-                <h4>2. iTerm2 Integration</h4>
+                <h4>2. Git Worktrees</h4>
+                <p>Creates isolated git worktrees, each with a unique branch based on main. Worktrees are stored in a
+                    platform-appropriate location.</p>
+            </div>
+
+            <div class="card">
+                <h4>3. iTerm2 Integration</h4>
                 <p>Windows open automatically with up to 6 panes each in a grid layout. Each pane is color-coded by
                     agent type or custom color.</p>
             </div>
 
             <div class="card">
-                <h4>3. Parallel Execution</h4>
+                <h4>4. Parallel Execution</h4>
                 <p>Agents and commands run in the exact order defined. When agents finish, compare branches and merge
                     the best solution.</p>
             </div>
 
-            <pre data-lang="output"><code><span class="token-output">⚙️  Config: /path/to/project/.orchestrate.yaml
-📦 Preset: dev
-📂 Repo: /path/to/project
+            <h3>Data Location</h3>
+            <p>Orchestrate stores repos and worktrees in platform-standard locations:</p>
+            <ul style="color: var(--text-dim); margin: 16px 0 16px 24px;">
+                <li><strong>macOS:</strong> <code class="inline-code">~/Library/Application Support/Orchestrate/</code>
+                </li>
+                <li><strong>Linux:</strong> <code class="inline-code">~/.local/share/orchestrate/</code></li>
+                <li><strong>Windows:</strong> <code class="inline-code">%APPDATA%\Orchestrate</code></li>
+            </ul>
+
+            <pre data-lang="output"><code><span class="token-output">⚙️  Config: /path/to/.orchestrate.yaml
+📦 Repo: groq/openbench
+🔄 Fetching latest from main branch...
+📂 Local path: ~/Library/Application Support/Orchestrate/repos/groq-openbench
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
-✅ Created worktree: .../project-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: claude)
+✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: claude)
    🖥️  Command: Dev Server (branch: fix-auth-a3f2)
    🖥️  Command: Tests (branch: fix-auth-a3f2)
-✅ Created worktree: .../project-fix-auth-b7c1 (branch: fix-auth-b7c1, agent: codex)
+✅ Created worktree: .../worktrees/groq-openbench-fix-auth-b7c1 (branch: fix-auth-b7c1, agent: codex)
    🖥️  Command: Terminal (branch: fix-auth-b7c1)
 
 ✨ Started 5 session(s) in 1 window(s)!</span></code></pre>
