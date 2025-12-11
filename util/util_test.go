@@ -189,3 +189,126 @@ func TestDataDir(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayPathWithHome(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		homeDir  string
+		want     string
+		skipOnOS string // skip this test on specific OS (e.g., "windows")
+	}{
+		{
+			name:     "path under home directory - macOS style",
+			path:     "/Users/testuser/.orchestrate/settings.yaml",
+			homeDir:  "/Users/testuser",
+			want:     "~/.orchestrate/settings.yaml",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "path under home directory - Linux style",
+			path:     "/home/testuser/.local/share/orchestrate/settings.yaml",
+			homeDir:  "/home/testuser",
+			want:     "~/.local/share/orchestrate/settings.yaml",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "path exactly at home directory",
+			path:     "/Users/testuser",
+			homeDir:  "/Users/testuser",
+			want:     "~/.",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "path not under home directory",
+			path:     "/var/log/something.log",
+			homeDir:  "/Users/testuser",
+			want:     "/var/log/something.log",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "path is parent of home directory",
+			path:     "/Users",
+			homeDir:  "/Users/testuser",
+			want:     "/Users",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "nested path under home",
+			path:     "/home/user/projects/myapp/src/main.go",
+			homeDir:  "/home/user",
+			want:     "~/projects/myapp/src/main.go",
+			skipOnOS: "windows",
+		},
+		{
+			name:     "home with trailing slash",
+			path:     "/Users/testuser/.orchestrate/settings.yaml",
+			homeDir:  "/Users/testuser/",
+			want:     "~/.orchestrate/settings.yaml",
+			skipOnOS: "windows",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.skipOnOS != "" && runtime.GOOS == tt.skipOnOS {
+				t.Skipf("Skipping test on %s", runtime.GOOS)
+			}
+
+			got := DisplayPathWithHome(tt.path, tt.homeDir)
+			if got != tt.want {
+				t.Errorf("DisplayPathWithHome(%q, %q) = %q, want %q", tt.path, tt.homeDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDisplayPathWithHome_Windows(t *testing.T) {
+	// On Windows, DisplayPath should return the path unchanged (no ~ substitution)
+	if runtime.GOOS != "windows" {
+		t.Skip("Skipping Windows-specific test on non-Windows OS")
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		homeDir string
+	}{
+		{
+			name:    "Windows path should not use tilde",
+			path:    `C:\Users\testuser\AppData\Roaming\Orchestrate\settings.yaml`,
+			homeDir: `C:\Users\testuser`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DisplayPathWithHome(tt.path, tt.homeDir)
+			// On Windows, should return unchanged
+			if got != tt.path {
+				t.Errorf("DisplayPathWithHome on Windows should return unchanged path, got %q", got)
+			}
+		})
+	}
+}
+
+func TestDisplayPath(t *testing.T) {
+	// Test that DisplayPath uses the actual home directory
+	got := DisplayPath("/some/random/path")
+
+	// Should return the path (either with ~ if under home, or unchanged)
+	if got == "" {
+		t.Error("DisplayPath returned empty string")
+	}
+
+	// On non-Windows, if we pass a path under the actual home, it should start with ~/
+	if runtime.GOOS != "windows" {
+		dataDir, err := DataDir()
+		if err == nil {
+			displayed := DisplayPath(dataDir)
+			if !strings.HasPrefix(displayed, "~/") {
+				t.Errorf("DisplayPath(%q) = %q, expected to start with ~/", dataDir, displayed)
+			}
+		}
+	}
+}

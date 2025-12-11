@@ -29,7 +29,8 @@ func main() {
 	settingsPath := filepath.Join(dataDir, config.SettingsFileName)
 	result := config.Load(dataDir)
 	if result.Config == nil {
-		log.Fatalf("Error: Settings file not found.\n\nPlease create: \"%s\"\n\nExample:\n\ndefault: default\n\npresets:\n  default:\n    - agent: claude\n", settingsPath)
+		displayPath := util.DisplayPath(settingsPath)
+		log.Fatalf("Error: Settings file not found.\n\nPlease create: %s\n\nExample:\n\ndefault: default\n\npresets:\n  default:\n    - agent: claude\n", displayPath)
 	}
 	fmt.Printf("⚙️  Settings: %s\n", result.Path)
 
