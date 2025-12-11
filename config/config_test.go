@@ -229,7 +229,7 @@ presets:
         - command: "echo hello"
           title: "Hello"
 `
-	configPath := filepath.Join(tmpDir, ".orchestrate.yaml")
+	configPath := filepath.Join(tmpDir, SettingsFileName)
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatal(err)
 	}
