@@ -26,10 +26,25 @@ presets:
   codex:
     - agent: codex
       commands:
-        - command: "./bin/go run ./cmd/compound-lib"
         - command: ""
 
   droid:
+    - agent: droid
+      commands:
+        - command: ""
+
+  claude:
+    - agent: claude
+      commands:
+        - command: ""
+
+  compound-codex:
+    - agent: codex
+      commands:
+        - command: "./bin/go run ./cmd/compound-lib"
+        - command: ""
+
+  compound-droid:
     - agent: droid
       commands:
         - command: "./bin/go run ./cmd/compound-lib"

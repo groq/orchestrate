@@ -14,17 +14,27 @@ import (
 )
 
 func main() {
-	// Load config file (if exists)
-	result := config.Load("")
-	if result.Path != "" {
-		fmt.Printf("⚙️  Config: %s\n", result.Path)
+	// Set up data directory (platform-appropriate location)
+	dataDir, err := util.DataDir()
+	if err != nil {
+		log.Fatalf("Failed to get data directory: %v", err)
 	}
 
-	// Get default preset name
-	defaultPresetName := ""
-	if result.Config != nil {
-		defaultPresetName = result.Config.GetDefaultPresetName()
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
 	}
+
+	// Load config file from data directory
+	settingsPath := filepath.Join(dataDir, config.SettingsFileName)
+	result := config.Load(dataDir)
+	if result.Config == nil {
+		log.Fatalf("Error: Settings file not found.\n\nPlease create: %s\n\nExample:\n\ndefault: default\n\npresets:\n  default:\n    - agent: claude\n", settingsPath)
+	}
+	fmt.Printf("⚙️  Settings: %s\n", result.Path)
+
+	// Get default preset name
+	defaultPresetName := result.Config.GetDefaultPresetName()
 
 	// Parse CLI flags
 	repo := flag.String("repo", "", "GitHub repo to clone (e.g., 'groq/openbench') (required)")
@@ -61,11 +71,6 @@ func main() {
 		windows = []config.Window{{Agent: "droid"}}
 	}
 
-	// Set up data directory (platform-appropriate location)
-	dataDir, err := util.DataDir()
-	if err != nil {
-		log.Fatalf("Failed to get data directory: %v", err)
-	}
 	reposDir := filepath.Join(dataDir, "repos")
 
 	// Clone or update the repo from main branch

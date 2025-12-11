@@ -61,11 +61,14 @@ func (w Window) IsValid() bool {
 // Preset is an ordered list of agent windows.
 type Preset []Window
 
-// Config represents the .orchestrate.yaml configuration file.
+// Config represents the settings.orchestrate.yaml configuration file.
 type Config struct {
 	Default string            `yaml:"default"`
 	Presets map[string]Preset `yaml:"presets"`
 }
+
+// SettingsFileName is the name of the settings file.
+const SettingsFileName = "settings.orchestrate.yaml"
 
 // LoadResult contains the loaded configuration and its path.
 type LoadResult struct {
@@ -73,11 +76,11 @@ type LoadResult struct {
 	Path   string
 }
 
-// Load loads configuration from .orchestrate.yaml in the specified directory.
-// If dir is empty, it uses the current directory.
+// Load loads configuration from settings.orchestrate.yaml in the specified directory.
+// The directory should be the orchestrate data directory.
 // Returns LoadResult with nil Config if file doesn't exist.
 func Load(dir string) LoadResult {
-	configFile := ".orchestrate.yaml"
+	configFile := SettingsFileName
 	if dir != "" {
 		configFile = filepath.Join(dir, configFile)
 	}

@@ -16,7 +16,12 @@
 
 ## ⚡ Quick Start
 
-**1. Create `.orchestrate.yaml` in your working directory:**
+**1. Create `settings.orchestrate.yaml` in the Orchestrate data directory:**
+
+The settings file goes in the platform-specific data directory:
+- **macOS:** `~/Library/Application Support/Orchestrate/settings.orchestrate.yaml`
+- **Linux:** `~/.local/share/orchestrate/settings.orchestrate.yaml`
+- **Windows:** `%APPDATA%\Orchestrate\settings.orchestrate.yaml`
 
 ```yaml
 default: default
@@ -88,7 +93,7 @@ go install github.com/groq/orchestrate@latest
 | `--repo` | **Required.** GitHub repo to clone (e.g., `groq/openbench`). Clones fresh or updates from main branch. |
 | `--name` | **Required.** Branch name prefix for worktrees. Each branch gets a unique hex suffix. |
 | `--prompt` | **Required.** The prompt to pass to each agent. |
-| `--preset` | Use a preset from `.orchestrate.yaml`. Defaults to the config's default preset. |
+| `--preset` | Use a preset from `settings.orchestrate.yaml`. Defaults to the config's default preset. |
 | `--n` | Multiplier for agent windows. `--n 2` runs each agent twice. |
 
 ---
@@ -100,7 +105,7 @@ go install github.com/groq/orchestrate@latest
 One agent, but with your dev server running and an extra shell for manual testing:
 
 ```yaml
-# .orchestrate.yaml
+# settings.orchestrate.yaml
 default: dev
 
 presets:
@@ -191,9 +196,10 @@ Agents must be installed and available in your PATH.
 
 ## ⚙️ Configuration
 
-Create `.orchestrate.yaml` in your working directory (where you run orchestrate from):
+Create `settings.orchestrate.yaml` in the Orchestrate data directory:
 
 ```yaml
+# settings.orchestrate.yaml
 # Default preset when --preset is not specified
 default: standard
 
@@ -239,13 +245,14 @@ presets:
 - Windows: `%APPDATA%\Orchestrate`
 
 Inside this directory:
+- `settings.orchestrate.yaml` — **Required.** Your presets configuration
 - `repos/` — Cloned repositories
 - `worktrees/` — Git worktrees for agent sessions
 
 **Example Output:**
 
 ```
-⚙️  Config: /path/to/.orchestrate.yaml
+⚙️  Settings: ~/Library/Application Support/Orchestrate/settings.orchestrate.yaml
 📦 Repo: groq/openbench
 🔄 Fetching latest from main branch...
 📂 Local path: ~/Library/Application Support/Orchestrate/repos/groq-openbench
