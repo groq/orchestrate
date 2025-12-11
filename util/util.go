@@ -31,7 +31,7 @@ func ResetRandomReader() {
 }
 
 // DataDir returns the platform-appropriate directory for orchestrate data.
-// - macOS: ~/Library/Application Support/Orchestrate
+// - macOS: ~/.orchestrate (avoids spaces in path for compatibility)
 // - Linux: ~/.local/share/orchestrate (or $XDG_DATA_HOME/orchestrate)
 // - Windows: %APPDATA%\Orchestrate
 func DataDir() (string, error) {
@@ -43,7 +43,7 @@ func DataDir() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		baseDir = filepath.Join(home, "Library", "Application Support", "Orchestrate")
+		baseDir = filepath.Join(home, ".orchestrate")
 	case "windows":
 		appData := os.Getenv("APPDATA")
 		if appData == "" {

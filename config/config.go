@@ -68,7 +68,7 @@ type Config struct {
 }
 
 // SettingsFileName is the name of the settings file.
-const SettingsFileName = "settings.orchestrate.yaml"
+const SettingsFileName = "settings.yaml"
 
 // LoadResult contains the loaded configuration and its path.
 type LoadResult struct {

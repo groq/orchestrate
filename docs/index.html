@@ -394,10 +394,10 @@
     <div class="container">
         <section>
             <h2>Quick Start</h2>
-            <p><strong>1. Create <code class="inline-code">settings.orchestrate.yaml</code> in the Orchestrate data
+            <p><strong>1. Create <code class="inline-code">settings.yaml</code> in the Orchestrate data
                     directory:</strong></p>
             <p style="font-size: 0.9rem;">
-                <strong>macOS:</strong> <code class="inline-code">~/Library/Application Support/Orchestrate/</code><br>
+                <strong>macOS:</strong> <code class="inline-code">~/.orchestrate/</code><br>
                 <strong>Linux:</strong> <code class="inline-code">~/.local/share/orchestrate/</code><br>
                 <strong>Windows:</strong> <code class="inline-code">%APPDATA%\Orchestrate\</code>
             </p>
@@ -503,7 +503,7 @@ orchestrate <span class="token-flag">--repo</span> <span class="token-string">gr
                     </tr>
                     <tr>
                         <td>--preset</td>
-                        <td>Use a preset from <code class="inline-code">settings.orchestrate.yaml</code>. Defaults to
+                        <td>Use a preset from <code class="inline-code">settings.yaml</code>. Defaults to
                             the
                             config's default preset.</td>
                     </tr>
@@ -564,7 +564,7 @@ orchestrate <span class="token-flag">--repo</span> <span class="token-string">my
 
         <section>
             <h2>Configuration</h2>
-            <p>Create <code class="inline-code">settings.orchestrate.yaml</code> in the Orchestrate data directory to
+            <p>Create <code class="inline-code">settings.yaml</code> in the Orchestrate data directory to
                 define presets. This file is <strong>required</strong>.</p>
 
             <pre data-lang="yaml"><code><span class="token-comment"># .orchestrate.yaml</span>
@@ -685,23 +685,22 @@ orchestrate <span class="token-flag">--repo</span> <span class="token-string">my
             <h3>Data Location</h3>
             <p>Orchestrate stores all data in platform-standard locations:</p>
             <ul style="color: var(--text-dim); margin: 16px 0 16px 24px;">
-                <li><strong>macOS:</strong> <code class="inline-code">~/Library/Application Support/Orchestrate/</code>
-                </li>
+                <li><strong>macOS:</strong> <code class="inline-code">~/.orchestrate/</code></li>
                 <li><strong>Linux:</strong> <code class="inline-code">~/.local/share/orchestrate/</code></li>
                 <li><strong>Windows:</strong> <code class="inline-code">%APPDATA%\Orchestrate</code></li>
             </ul>
             <p>Inside this directory:</p>
             <ul style="color: var(--text-dim); margin: 16px 0 16px 24px;">
-                <li><code class="inline-code">settings.orchestrate.yaml</code> — <strong>Required.</strong> Your presets
+                <li><code class="inline-code">settings.yaml</code> — <strong>Required.</strong> Your presets
                     configuration</li>
                 <li><code class="inline-code">repos/</code> — Cloned repositories</li>
                 <li><code class="inline-code">worktrees/</code> — Git worktrees for agent sessions</li>
             </ul>
 
-            <pre data-lang="output"><code><span class="token-output">⚙️  Settings: ~/Library/Application Support/Orchestrate/settings.orchestrate.yaml
+            <pre data-lang="output"><code><span class="token-output">⚙️  Settings: ~/.orchestrate/settings.yaml
 📦 Repo: groq/openbench
 🔄 Fetching latest from main branch...
-📂 Local path: ~/Library/Application Support/Orchestrate/repos/groq-openbench
+📂 Local path: ~/.orchestrate/repos/groq-openbench
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
 ✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: claude)

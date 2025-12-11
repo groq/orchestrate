@@ -176,8 +176,8 @@ func TestDataDir(t *testing.T) {
 	// Verify platform-specific expectations
 	switch runtime.GOOS {
 	case "darwin":
-		if !strings.Contains(dir, "Library/Application Support/Orchestrate") {
-			t.Errorf("DataDir() on macOS = %q, want to contain 'Library/Application Support/Orchestrate'", dir)
+		if !strings.Contains(dir, ".orchestrate") {
+			t.Errorf("DataDir() on macOS = %q, want to contain '.orchestrate'", dir)
 		}
 	case "windows":
 		if !strings.Contains(dir, "Orchestrate") {

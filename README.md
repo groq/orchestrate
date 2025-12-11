@@ -16,12 +16,12 @@
 
 ## ⚡ Quick Start
 
-**1. Create `settings.orchestrate.yaml` in the Orchestrate data directory:**
+**1. Create `settings.yaml` in the Orchestrate data directory:**
 
 The settings file goes in the platform-specific data directory:
-- **macOS:** `~/Library/Application Support/Orchestrate/settings.orchestrate.yaml`
-- **Linux:** `~/.local/share/orchestrate/settings.orchestrate.yaml`
-- **Windows:** `%APPDATA%\Orchestrate\settings.orchestrate.yaml`
+- **macOS:** `~/.orchestrate/settings.yaml`
+- **Linux:** `~/.local/share/orchestrate/settings.yaml`
+- **Windows:** `%APPDATA%\Orchestrate\settings.yaml`
 
 ```yaml
 default: default
@@ -93,7 +93,7 @@ go install github.com/groq/orchestrate@latest
 | `--repo` | **Required.** GitHub repo to clone (e.g., `groq/openbench`). Clones fresh or updates from main branch. |
 | `--name` | **Required.** Branch name prefix for worktrees. Each branch gets a unique hex suffix. |
 | `--prompt` | **Required.** The prompt to pass to each agent. |
-| `--preset` | Use a preset from `settings.orchestrate.yaml`. Defaults to the config's default preset. |
+| `--preset` | Use a preset from `settings.yaml`. Defaults to the config's default preset. |
 | `--n` | Multiplier for agent windows. `--n 2` runs each agent twice. |
 
 ---
@@ -105,7 +105,7 @@ go install github.com/groq/orchestrate@latest
 One agent, but with your dev server running and an extra shell for manual testing:
 
 ```yaml
-# settings.orchestrate.yaml
+# settings.yaml
 default: dev
 
 presets:
@@ -196,10 +196,10 @@ Agents must be installed and available in your PATH.
 
 ## ⚙️ Configuration
 
-Create `settings.orchestrate.yaml` in the Orchestrate data directory:
+Create `settings.yaml` in the Orchestrate data directory:
 
 ```yaml
-# settings.orchestrate.yaml
+# settings.yaml
 # Default preset when --preset is not specified
 default: standard
 
@@ -240,22 +240,22 @@ presets:
 4. **Parallel Execution** — Agents work simultaneously; compare branches and merge the best
 
 **Data Location:**
-- macOS: `~/Library/Application Support/Orchestrate/`
+- macOS: `~/.orchestrate/`
 - Linux: `~/.local/share/orchestrate/` (or `$XDG_DATA_HOME/orchestrate`)
 - Windows: `%APPDATA%\Orchestrate`
 
 Inside this directory:
-- `settings.orchestrate.yaml` — **Required.** Your presets configuration
+- `settings.yaml` — **Required.** Your presets configuration
 - `repos/` — Cloned repositories
 - `worktrees/` — Git worktrees for agent sessions
 
 **Example Output:**
 
 ```
-⚙️  Settings: ~/Library/Application Support/Orchestrate/settings.orchestrate.yaml
+⚙️  Settings: ~/.orchestrate/settings.yaml
 📦 Repo: groq/openbench
 🔄 Fetching latest from main branch...
-📂 Local path: ~/Library/Application Support/Orchestrate/repos/groq-openbench
+📂 Local path: ~/.orchestrate/repos/groq-openbench
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
 ✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: codex)
