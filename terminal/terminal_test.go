@@ -229,7 +229,7 @@ func TestBuildCustomCommand_CdToWorktree(t *testing.T) {
 			cmd := BuildCustomCommand(tt.session)
 
 			if tt.wantCd {
-				if !strings.Contains(cmd, "cd "+tt.wantCdPath) {
+				if !strings.Contains(cmd, "cd \""+tt.wantCdPath+"\"") {
 					t.Errorf("Should cd to worktree, got: %s", cmd)
 				}
 			} else {
@@ -298,7 +298,7 @@ func TestBuildCustomCommand_EmptyCommand(t *testing.T) {
 			}
 
 			// Should cd to worktree
-			if !strings.Contains(cmd, "cd /path") {
+			if !strings.Contains(cmd, "cd \"/path\"") {
 				t.Errorf("Should cd to worktree, got: %s", cmd)
 			}
 
@@ -534,7 +534,7 @@ func TestBuildCustomCommand_FullFeatured(t *testing.T) {
 	}
 
 	// Check cd
-	if !strings.Contains(cmd, "cd /home/user/project-fix-abc123") {
+	if !strings.Contains(cmd, "cd \"/home/user/project-fix-abc123\"") {
 		t.Errorf("Should cd to worktree, got: %s", cmd)
 	}
 
@@ -565,7 +565,7 @@ func TestBuildCustomCommand_OrderOfOperations(t *testing.T) {
 	// Find positions of key elements
 	titlePos := strings.Index(cmd, "My Title")
 	colorPos := strings.Index(cmd, "brightness")
-	cdPos := strings.Index(cmd, "cd /path")
+	cdPos := strings.Index(cmd, "cd \"/path\"")
 	branchPos := strings.Index(cmd, "Branch:")
 	cmdPos := strings.LastIndex(cmd, "my-command")
 
