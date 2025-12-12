@@ -101,7 +101,7 @@ func BuildAgentCommand(s SessionInfo, prompt string) string {
 
 	// Build full command
 	escapedPrompt := strings.ReplaceAll(prompt, "'", "'\\''")
-	return fmt.Sprintf("%s%s && cd %s && %s '%s'\n", titleCmd, colorCmd, s.Path, s.Agent, escapedPrompt)
+	return fmt.Sprintf("%s%s && cd \"%s\" && %s '%s'\n", titleCmd, colorCmd, s.Path, s.Agent, escapedPrompt)
 }
 
 // BuildCustomCommand builds the command for a custom command session.
@@ -125,7 +125,7 @@ func BuildCustomCommand(s SessionInfo) string {
 	// Change to worktree directory
 	cdCmd := ""
 	if s.WorktreePath != "" {
-		cdCmd = fmt.Sprintf(" && cd %s", s.WorktreePath)
+		cdCmd = fmt.Sprintf(" && cd \"%s\"", s.WorktreePath)
 	}
 
 	// Print branch info if in a worktree

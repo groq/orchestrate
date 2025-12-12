@@ -254,3 +254,189 @@ func TestSetAndResetCommander(t *testing.T) {
 	// Restore original for other tests
 	defaultCmd = original
 }
+
+func TestEnsureRepoWithCmd(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "git_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	t.Run("invalid repo format - no slash", func(t *testing.T) {
+		mock := &MockCommander{}
+		_, err := EnsureRepoWithCmd(mock, "invalidrepo", tmpDir)
+		if err == nil {
+			t.Error("Expected error for invalid repo format")
+		}
+	})
+
+	t.Run("invalid repo format - too many parts", func(t *testing.T) {
+		mock := &MockCommander{}
+		_, err := EnsureRepoWithCmd(mock, "owner/repo/extra", tmpDir)
+		if err == nil {
+			t.Error("Expected error for invalid repo format")
+		}
+	})
+
+	t.Run("successful clone of new repo", func(t *testing.T) {
+		baseDir := filepath.Join(tmpDir, "repos1")
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				return "Cloning...", nil
+			},
+		}
+
+		path, err := EnsureRepoWithCmd(mock, "groq/orion", baseDir)
+		if err != nil {
+			t.Errorf("EnsureRepoWithCmd() error = %v", err)
+		}
+
+		expectedPath := filepath.Join(baseDir, "groq-orion")
+		if path != expectedPath {
+			t.Errorf("Expected path %s, got %s", expectedPath, path)
+		}
+
+		// Verify clone was called
+		if len(mock.Calls) != 1 {
+			t.Fatalf("Expected 1 call, got %d", len(mock.Calls))
+		}
+		call := mock.Calls[0]
+		if call.Args[0] != "clone" {
+			t.Errorf("Expected clone command, got %v", call.Args)
+		}
+	})
+
+	t.Run("fetch and reset existing repo", func(t *testing.T) {
+		baseDir := filepath.Join(tmpDir, "repos2")
+		repoPath := filepath.Join(baseDir, "owner-repo")
+		// Create existing repo directory with .git
+		if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		callCount := 0
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				callCount++
+				return "OK", nil
+			},
+		}
+
+		path, err := EnsureRepoWithCmd(mock, "owner/repo", baseDir)
+		if err != nil {
+			t.Errorf("EnsureRepoWithCmd() error = %v", err)
+		}
+
+		if path != repoPath {
+			t.Errorf("Expected path %s, got %s", repoPath, path)
+		}
+
+		// Should have called fetch, reset, and clean
+		if len(mock.Calls) != 3 {
+			t.Errorf("Expected 3 calls (fetch, reset, clean), got %d", len(mock.Calls))
+		}
+	})
+
+	t.Run("clone fails", func(t *testing.T) {
+		baseDir := filepath.Join(tmpDir, "repos3")
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				return "fatal: repository not found", errors.New("exit status 128")
+			},
+		}
+
+		_, err := EnsureRepoWithCmd(mock, "owner/nonexistent", baseDir)
+		if err == nil {
+			t.Error("Expected error when clone fails")
+		}
+	})
+}
+
+func TestFetchAndResetWithCmd(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "git_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	t.Run("successful fetch and reset", func(t *testing.T) {
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				return "OK", nil
+			},
+		}
+
+		err := FetchAndResetWithCmd(mock, tmpDir)
+		if err != nil {
+			t.Errorf("FetchAndResetWithCmd() error = %v", err)
+		}
+
+		// Verify commands were called in order
+		if len(mock.Calls) != 3 {
+			t.Fatalf("Expected 3 calls, got %d", len(mock.Calls))
+		}
+
+		// Check fetch
+		if mock.Calls[0].Args[0] != "fetch" {
+			t.Errorf("Expected fetch, got %v", mock.Calls[0].Args)
+		}
+
+		// Check reset
+		if mock.Calls[1].Args[0] != "reset" {
+			t.Errorf("Expected reset, got %v", mock.Calls[1].Args)
+		}
+
+		// Check clean
+		if mock.Calls[2].Args[0] != "clean" {
+			t.Errorf("Expected clean, got %v", mock.Calls[2].Args)
+		}
+	})
+
+	t.Run("fetch fails", func(t *testing.T) {
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				if args[0] == "fetch" {
+					return "fatal: could not read from remote", errors.New("exit status 128")
+				}
+				return "OK", nil
+			},
+		}
+
+		err := FetchAndResetWithCmd(mock, tmpDir)
+		if err == nil {
+			t.Error("Expected error when fetch fails")
+		}
+	})
+
+	t.Run("reset fails", func(t *testing.T) {
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				if args[0] == "reset" {
+					return "fatal: could not reset", errors.New("exit status 1")
+				}
+				return "OK", nil
+			},
+		}
+
+		err := FetchAndResetWithCmd(mock, tmpDir)
+		if err == nil {
+			t.Error("Expected error when reset fails")
+		}
+	})
+
+	t.Run("clean fails", func(t *testing.T) {
+		mock := &MockCommander{
+			RunFunc: func(dir string, args ...string) (string, error) {
+				if args[0] == "clean" {
+					return "fatal: could not clean", errors.New("exit status 1")
+				}
+				return "OK", nil
+			},
+		}
+
+		err := FetchAndResetWithCmd(mock, tmpDir)
+		if err == nil {
+			t.Error("Expected error when clean fails")
+		}
+	})
+}

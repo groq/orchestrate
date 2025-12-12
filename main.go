@@ -14,27 +14,39 @@ import (
 )
 
 func main() {
-	// Load config file (if exists)
-	result := config.Load("")
-	if result.Path != "" {
-		fmt.Printf("⚙️  Config: %s\n", result.Path)
+	// Set up data directory (platform-appropriate location)
+	dataDir, err := util.DataDir()
+	if err != nil {
+		log.Fatalf("Failed to get data directory: %v", err)
 	}
+
+	// Ensure data directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
+
+	// Load config file from data directory
+	settingsPath := filepath.Join(dataDir, config.SettingsFileName)
+	result := config.Load(dataDir)
+	if result.Config == nil {
+		displayPath := util.DisplayPath(settingsPath)
+		log.Fatalf("Error: Settings file not found.\n\nPlease create: %s\n\nExample:\n\ndefault: default\n\npresets:\n  default:\n    - agent: claude\n", displayPath)
+	}
+	fmt.Printf("⚙️  Settings: %s\n", result.Path)
 
 	// Get default preset name
-	defaultPresetName := ""
-	if result.Config != nil {
-		defaultPresetName = result.Config.GetDefaultPresetName()
-	}
+	defaultPresetName := result.Config.GetDefaultPresetName()
 
 	// Parse CLI flags
+	repo := flag.String("repo", "", "GitHub repo to clone (e.g., 'groq/openbench') (required)")
 	name := flag.String("name", "", "Branch name prefix for worktrees (required)")
 	presetFlag := flag.String("preset", defaultPresetName, "Preset name from config file")
 	n := flag.Int("n", 0, "Multiplier for agent windows (overrides preset)")
 	prompt := flag.String("prompt", "", "Prompt to pass to each agent (required)")
 	flag.Parse()
 
-	if *name == "" || *prompt == "" {
-		log.Fatal("Error: --name and --prompt are required")
+	if *repo == "" || *name == "" || *prompt == "" {
+		log.Fatal("Error: --repo, --name, and --prompt are required")
 	}
 
 	// Resolve preset settings
@@ -60,23 +72,25 @@ func main() {
 		windows = []config.Window{{Agent: "droid"}}
 	}
 
-	// Get current repo info
-	repoRoot, err := git.GetRoot()
+	reposDir := filepath.Join(dataDir, "repos")
+
+	// Clone or update the repo from main branch
+	fmt.Printf("📦 Repo: %s\n", *repo)
+	fmt.Printf("🔄 Fetching latest from main branch...\n")
+
+	repoRoot, err := git.EnsureRepo(*repo, reposDir)
 	if err != nil {
-		log.Fatalf("Error: not in a git repository: %v", err)
+		log.Fatalf("Error: failed to ensure repo: %v", err)
 	}
 
-	currentBranch, err := git.GetCurrentBranch()
-	if err != nil {
-		log.Fatalf("Error getting current branch: %v", err)
-	}
+	baseBranch := "main"
 
-	fmt.Printf("📂 Repo: %s\n", repoRoot)
-	fmt.Printf("🌿 Base branch: %s\n", currentBranch)
+	fmt.Printf("📂 Local path: %s\n", repoRoot)
+	fmt.Printf("🌿 Base branch: %s\n", baseBranch)
 	fmt.Printf("💬 Prompt: %s\n", *prompt)
 
-	// Create orchestrator-worktrees directory
-	worktreesDir := filepath.Join(filepath.Dir(repoRoot), "orchestrator-worktrees")
+	// Create worktrees directory in the data directory
+	worktreesDir := filepath.Join(dataDir, "worktrees")
 	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 		log.Fatalf("Failed to create worktrees directory: %v", err)
 	}
@@ -104,7 +118,7 @@ func main() {
 			branchName := fmt.Sprintf("%s-%s", *name, suffix)
 			worktreePath := filepath.Join(worktreesDir, fmt.Sprintf("%s-%s", filepath.Base(repoRoot), branchName))
 
-			err := git.CreateWorktree(repoRoot, worktreePath, branchName, currentBranch)
+			err := git.CreateWorktree(repoRoot, worktreePath, branchName, baseBranch)
 			if err != nil {
 				log.Printf("⚠️  Failed to create worktree for %s: %v", branchName, err)
 				continue
