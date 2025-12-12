@@ -57,7 +57,7 @@ func NewManager(appName string) (*Manager, error) {
 // Close closes the iTerm2 connection.
 func (m *Manager) Close() {
 	if m.app != nil {
-		m.app.Close()
+		_ = m.app.Close()
 	}
 }
 
@@ -76,7 +76,7 @@ func MaximizeWindow() {
 			set bounds to {0, 25, screenWidth, screenHeight - 50}
 		end tell
 	end tell`
-	exec.Command("osascript", "-e", script).Run()
+	_ = exec.Command("osascript", "-e", script).Run()
 }
 
 // BuildSessionCommand builds the shell command to run in a session.
@@ -249,7 +249,7 @@ func (m *Manager) LaunchSessions(sessions []SessionInfo, prompt string) (int, er
 		for j, session := range allSessions {
 			if j < len(batch) {
 				cmd := BuildSessionCommand(batch[j], prompt)
-				SendCommand(session, cmd)
+				_ = SendCommand(session, cmd)
 			}
 		}
 	}
