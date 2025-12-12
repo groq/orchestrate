@@ -12,6 +12,9 @@
 
 </div>
 
+<img width="1408" height="878" alt="Screenshot 2025-12-12 at 5 42 38 AM" src="https://github.com/user-attachments/assets/4a54ba41-422a-4773-a304-8b968a1c0aa8" />
+
+
 ---
 
 ## ⚡ Quick Start
