@@ -260,7 +260,7 @@ func TestEnsureRepoWithCmd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	t.Run("invalid repo format - no slash", func(t *testing.T) {
 		mock := &MockCommander{}
@@ -357,7 +357,7 @@ func TestFetchAndResetWithCmd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	t.Run("successful fetch and reset", func(t *testing.T) {
 		mock := &MockCommander{
