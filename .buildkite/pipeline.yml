@@ -1,0 +1,32 @@
+# Buildkite pipeline for Orchestrate
+
+env:
+  HERMIT_ENV: "${BUILDKITE_BUILD_CHECKOUT_PATH}"
+
+plugins: &hermit
+  elastic/hermit#v1.0.2: {}
+
+steps:
+  - group: ":microscope: Test"
+    key: "lint-and-test"
+    steps:
+      - id: "golangci-lint"
+        label: ":golangci-lint: GolangCI Lint"
+        commands:
+          - golangci-lint run ./...
+        plugins:
+          - *hermit
+
+      - id: "go-build"
+        label: ":go: Go Build"
+        commands:
+          - go build -o orchestrate .
+        plugins:
+          - *hermit
+
+      - id: "run-tests"
+        label: ":go: Run Tests"
+        commands:
+          - go test -v ./...
+        plugins:
+          - *hermit

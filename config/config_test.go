@@ -218,7 +218,7 @@ func TestLoad_FromFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	configContent := `
 default: test
@@ -260,7 +260,7 @@ func TestLoad_NoConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	result := Load(tmpDir)
 	if result.Config != nil {

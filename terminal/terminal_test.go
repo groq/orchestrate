@@ -574,7 +574,7 @@ func TestBuildCustomCommand_OrderOfOperations(t *testing.T) {
 	}
 
 	// Verify order: title < color < cd < branch < command
-	if !(titlePos < colorPos && colorPos < cdPos && cdPos < branchPos && branchPos < cmdPos) {
+	if titlePos >= colorPos || colorPos >= cdPos || cdPos >= branchPos || branchPos >= cmdPos {
 		t.Errorf("Command elements not in expected order. title=%d, color=%d, cd=%d, branch=%d, cmd=%d. Full: %s",
 			titlePos, colorPos, cdPos, branchPos, cmdPos, cmd)
 	}
