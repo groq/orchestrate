@@ -13,7 +13,7 @@ var RandomReader io.Reader = rand.Reader
 // RandomHex generates a random hex string of n bytes (2n hex characters).
 func RandomHex(n int) string {
 	bytes := make([]byte, n)
-	RandomReader.Read(bytes)
+	_, _ = RandomReader.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
 

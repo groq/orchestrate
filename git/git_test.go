@@ -128,7 +128,7 @@ func TestCreateWorktreeWithCmd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	t.Run("worktree path already exists", func(t *testing.T) {
 		existingPath := filepath.Join(tmpDir, "existing")
@@ -198,7 +198,7 @@ func TestWorktreeExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	existingPath := filepath.Join(tmpDir, "exists")
 	if err := os.MkdirAll(existingPath, 0755); err != nil {

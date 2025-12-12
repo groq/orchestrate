@@ -89,7 +89,7 @@ func TestRandomHex_RealRandom(t *testing.T) {
 		}
 		// Check it's valid hex
 		for _, c := range hex {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				t.Errorf("RandomHex(4) = %q contains invalid hex char %c", hex, c)
 			}
 		}
