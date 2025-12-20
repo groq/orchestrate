@@ -377,3 +377,217 @@ func TestMinFunction(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailsToggleWithD(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: false,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+		},
+	}
+
+	// First 'd' press should enable details mode and send WorktreeDetailsMsg
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if !m.detailsMode {
+		t.Error("Details mode should be enabled after first 'd' press")
+	}
+	if cmd == nil {
+		t.Fatal("First 'd' press should return a command")
+	}
+	msg := cmd()
+	if _, ok := msg.(WorktreeDetailsMsg); !ok {
+		t.Errorf("Expected WorktreeDetailsMsg, got %T", msg)
+	}
+
+	// Second 'd' press should disable details mode and send CloseWorktreeDetailsMsg
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if m.detailsMode {
+		t.Error("Details mode should be disabled after second 'd' press")
+	}
+	if cmd == nil {
+		t.Fatal("Second 'd' press should return a command")
+	}
+	msg = cmd()
+	if _, ok := msg.(CloseWorktreeDetailsMsg); !ok {
+		t.Errorf("Expected CloseWorktreeDetailsMsg, got %T", msg)
+	}
+}
+
+func TestEscClosesDetails(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: true,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+		},
+	}
+
+	// Esc should close details mode
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.detailsMode {
+		t.Error("Details mode should be disabled after esc press")
+	}
+	if cmd == nil {
+		t.Fatal("Esc press should return a command when in details mode")
+	}
+	msg := cmd()
+	if _, ok := msg.(CloseWorktreeDetailsMsg); !ok {
+		t.Errorf("Expected CloseWorktreeDetailsMsg, got %T", msg)
+	}
+}
+
+func TestEscWhenNotInDetailsMode(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: false,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+		},
+	}
+
+	// Esc when not in details mode should not send a message
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if m.detailsMode {
+		t.Error("Details mode should still be disabled")
+	}
+	// We just need to ensure detailsMode is still false
+}
+
+func TestNavigationUpdatesDetailsWhenInDetailsMode(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: true,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+			{Name: "wt2", Path: "/test/wt2"},
+			{Name: "wt3", Path: "/test/wt3"},
+		},
+	}
+
+	// Navigate down - should send WorktreeDetailsMsg for new selection
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.selected != 1 {
+		t.Errorf("Expected selection to move to 1, got %d", m.selected)
+	}
+	if cmd == nil {
+		t.Fatal("Navigation in details mode should return a command")
+	}
+	msg := cmd()
+	detailsMsg, ok := msg.(WorktreeDetailsMsg)
+	if !ok {
+		t.Fatalf("Expected WorktreeDetailsMsg, got %T", msg)
+	}
+	if detailsMsg.Worktree == nil || detailsMsg.Worktree.Name != "wt2" {
+		t.Error("Details should be for wt2")
+	}
+
+	// Navigate up - should send WorktreeDetailsMsg for new selection
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.selected != 0 {
+		t.Errorf("Expected selection to move to 0, got %d", m.selected)
+	}
+	if cmd == nil {
+		t.Fatal("Navigation in details mode should return a command")
+	}
+	msg = cmd()
+	detailsMsg, ok = msg.(WorktreeDetailsMsg)
+	if !ok {
+		t.Fatalf("Expected WorktreeDetailsMsg, got %T", msg)
+	}
+	if detailsMsg.Worktree == nil || detailsMsg.Worktree.Name != "wt1" {
+		t.Error("Details should be for wt1")
+	}
+}
+
+func TestNavigationDoesNotUpdateDetailsWhenNotInDetailsMode(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: false,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+			{Name: "wt2", Path: "/test/wt2"},
+		},
+	}
+
+	// Navigate down - should not send WorktreeDetailsMsg
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.selected != 1 {
+		t.Errorf("Expected selection to move to 1, got %d", m.selected)
+	}
+	// cmd should be nil because we're not in details mode
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(WorktreeDetailsMsg); ok {
+			t.Error("Should not send WorktreeDetailsMsg when not in details mode")
+		}
+	}
+}
+
+func TestGShortcutUpdatesDetailsInDetailsMode(t *testing.T) {
+	m := Model{
+		selected:    2,
+		detailsMode: true,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+			{Name: "wt2", Path: "/test/wt2"},
+			{Name: "wt3", Path: "/test/wt3"},
+		},
+	}
+
+	// Press 'g' to go to top - should send WorktreeDetailsMsg
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	if m.selected != 0 {
+		t.Errorf("Expected selection to move to 0, got %d", m.selected)
+	}
+	if cmd == nil {
+		t.Fatal("'g' in details mode should return a command")
+	}
+	msg := cmd()
+	detailsMsg, ok := msg.(WorktreeDetailsMsg)
+	if !ok {
+		t.Fatalf("Expected WorktreeDetailsMsg, got %T", msg)
+	}
+	if detailsMsg.Worktree == nil || detailsMsg.Worktree.Name != "wt1" {
+		t.Error("Details should be for wt1")
+	}
+}
+
+func TestShiftGShortcutUpdatesDetailsInDetailsMode(t *testing.T) {
+	m := Model{
+		selected:    0,
+		detailsMode: true,
+		worktrees: []WorktreeItem{
+			{Name: "wt1", Path: "/test/wt1"},
+			{Name: "wt2", Path: "/test/wt2"},
+			{Name: "wt3", Path: "/test/wt3"},
+		},
+	}
+
+	// Press 'G' to go to bottom - should send WorktreeDetailsMsg
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if m.selected != 2 {
+		t.Errorf("Expected selection to move to 2, got %d", m.selected)
+	}
+	if cmd == nil {
+		t.Fatal("'G' in details mode should return a command")
+	}
+	msg := cmd()
+	detailsMsg, ok := msg.(WorktreeDetailsMsg)
+	if !ok {
+		t.Fatalf("Expected WorktreeDetailsMsg, got %T", msg)
+	}
+	if detailsMsg.Worktree == nil || detailsMsg.Worktree.Name != "wt3" {
+		t.Error("Details should be for wt3")
+	}
+}
+
+func TestCloseWorktreeDetailsMsg(t *testing.T) {
+	// Test that the message type exists and can be created
+	msg := CloseWorktreeDetailsMsg{}
+	if msg != (CloseWorktreeDetailsMsg{}) {
+		t.Error("CloseWorktreeDetailsMsg should be an empty struct")
+	}
+}

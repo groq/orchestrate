@@ -217,6 +217,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case worktrees.CloseWorktreeDetailsMsg:
+		// Close the sidebar
+		if m.sidebar.IsOpen {
+			m.sidebar.Toggle()
+			m.ctx.ToggleSidebar()
+			m.syncComponentDimensions()
+		}
+		return m, nil
+
 	case worktrees.OpenWorktreeMsg:
 		// Open worktree in iTerm with same preset
 		if msg.Worktree != nil && msg.Worktree.HasMeta {
@@ -563,7 +572,13 @@ func (m Model) renderWorktreeDetails(wt *worktrees.WorktreeItem) string {
 		if len(prompt) > 200 {
 			prompt = prompt[:197] + "..."
 		}
-		lines = append(lines, m.ctx.Styles.Common.FaintTextStyle.Render(prompt))
+		// Make prompt more visible with MainTextStyle and add a border
+		promptStyle := lipgloss.NewStyle().
+			Foreground(m.ctx.Theme.PrimaryText).
+			Background(m.ctx.Theme.FaintBorder).
+			Padding(1).
+			Width(constants.SidebarWidth - 8)
+		lines = append(lines, promptStyle.Render(prompt))
 	}
 
 	lines = append(lines, "")

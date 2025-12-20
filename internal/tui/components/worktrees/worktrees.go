@@ -51,6 +51,7 @@ type Model struct {
 	worktreesDir     string
 	confirmingDelete bool
 	deleteTarget     *WorktreeItem
+	detailsMode      bool
 }
 
 // WorktreesLoadedMsg is sent when worktrees are loaded.
@@ -63,6 +64,9 @@ type WorktreesLoadedMsg struct {
 type WorktreeDetailsMsg struct {
 	Worktree *WorktreeItem
 }
+
+// CloseWorktreeDetailsMsg is sent when the worktree details should be closed.
+type CloseWorktreeDetailsMsg struct{}
 
 // OpenWorktreeMsg is sent when a worktree should be opened in iTerm (new window).
 type OpenWorktreeMsg struct {
@@ -287,7 +291,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Track if navigation occurred to update details if needed
+		oldSelected := m.selected
+
 		switch msg.String() {
+		case "esc":
+			// Close details if in details mode
+			if m.detailsMode {
+				m.detailsMode = false
+				return m, func() tea.Msg {
+					return CloseWorktreeDetailsMsg{}
+				}
+			}
 		case "up", "k":
 			if m.selected > 0 {
 				m.selected--
@@ -310,10 +325,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 		case "d":
-			// Show details in sidebar
+			// Toggle details in sidebar
 			if wt := m.SelectedWorktree(); wt != nil {
-				return m, func() tea.Msg {
-					return WorktreeDetailsMsg{Worktree: wt}
+				if m.detailsMode {
+					// Close details
+					m.detailsMode = false
+					return m, func() tea.Msg {
+						return CloseWorktreeDetailsMsg{}
+					}
+				} else {
+					// Open details
+					m.detailsMode = true
+					return m, func() tea.Msg {
+						return WorktreeDetailsMsg{Worktree: wt}
+					}
 				}
 			}
 		case "o":
@@ -328,6 +353,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if wt := m.SelectedWorktree(); wt != nil {
 				m.confirmingDelete = true
 				m.deleteTarget = wt
+			}
+		}
+
+		// If navigation occurred and details mode is active, show details for new selection
+		if m.detailsMode && oldSelected != m.selected {
+			if wt := m.SelectedWorktree(); wt != nil {
+				return m, func() tea.Msg {
+					return WorktreeDetailsMsg{Worktree: wt}
+				}
 			}
 		}
 
