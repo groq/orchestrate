@@ -137,5 +137,5 @@ func GetTerminalTypeOptions() []TerminalType {
 
 // GetThemeOptions returns the available theme options
 func GetThemeOptions() []string {
-	return []string{"default", "dark", "light", "ocean", "forest"}
+	return []string{"default", "dark", "light"}
 }

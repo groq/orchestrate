@@ -36,6 +36,7 @@ type WorktreeItem struct {
 	HasMeta    bool
 	Adds       int
 	Deletes    int
+	FileStats  []git_utils.FileStats
 }
 
 // Model represents the worktrees component.
@@ -54,6 +55,21 @@ type Model struct {
 type WorktreesLoadedMsg struct {
 	Worktrees []WorktreeItem
 	Err       error
+}
+
+// WorktreeDetailsMsg is sent when a worktree is selected for detailed view.
+type WorktreeDetailsMsg struct {
+	Worktree *WorktreeItem
+}
+
+// OpenWorktreeMsg is sent when a worktree should be opened in iTerm (new window).
+type OpenWorktreeMsg struct {
+	Worktree *WorktreeItem
+}
+
+// FocusWorktreeMsg is sent when an existing worktree iTerm window should be focused.
+type FocusWorktreeMsg struct {
+	Worktree *WorktreeItem
 }
 
 // New creates a new worktrees model.
@@ -143,6 +159,11 @@ func (m Model) loadWorktrees() tea.Cmd {
 			if a, d, err := git_utils.GetStatusStats(wtPath); err == nil {
 				item.Adds = a
 				item.Deletes = d
+			}
+
+			// Get detailed file stats
+			if fileStats, err := git_utils.GetDetailedStatusStats(wtPath); err == nil {
+				item.FileStats = fileStats
 			}
 
 			// Try to load session metadata
@@ -246,6 +267,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "G":
 			if len(m.worktrees) > 0 {
 				m.selected = len(m.worktrees) - 1
+			}
+		case "enter":
+			// Focus existing iTerm window for this worktree
+			if wt := m.SelectedWorktree(); wt != nil {
+				return m, func() tea.Msg {
+					return FocusWorktreeMsg{Worktree: wt}
+				}
+			}
+		case "d":
+			// Show details in sidebar
+			if wt := m.SelectedWorktree(); wt != nil {
+				return m, func() tea.Msg {
+					return WorktreeDetailsMsg{Worktree: wt}
+				}
+			}
+		case "o":
+			// Open worktree in iTerm with same preset
+			if wt := m.SelectedWorktree(); wt != nil {
+				return m, func() tea.Msg {
+					return OpenWorktreeMsg{Worktree: wt}
+				}
 			}
 		}
 
@@ -434,9 +476,10 @@ func (m Model) renderActions() string {
 		desc string
 	}{
 		{"↑/↓", "navigate"},
-		{"enter", "details"},
-		{"r", "refresh"},
-		{"p", "preview"},
+		{"enter", "focus"},
+		{"o", "open new"},
+		{"d", "details"},
+		{"ctrl+r", "refresh"},
 	}
 
 	var parts []string

@@ -154,8 +154,8 @@ func InitStyles(t theme.Theme) Styles {
 		Foreground(t.SecondaryText).
 		Render(constants.InfoIcon)
 
-	// Status styles
-	statusColors := theme.DefaultStatusColors
+	// Status styles - get colors based on theme
+	statusColors := theme.GetStatusColors(t.Name)
 	s.Status.Active = lipgloss.NewStyle().
 		Foreground(statusColors.Active).
 		Bold(true)

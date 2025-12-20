@@ -440,3 +440,283 @@ func TestFetchAndResetWithCmd(t *testing.T) {
 		}
 	})
 }
+
+func TestGetStatusStatsWithCmd(t *testing.T) {
+	tests := []struct {
+		name        string
+		mockOutput  string
+		mockErr     error
+		wantAdds    int
+		wantDeletes int
+		wantErr     bool
+	}{
+		{
+			name:        "single file with changes",
+			mockOutput:  `5	3	main.go`,
+			wantAdds:    5,
+			wantDeletes: 3,
+			wantErr:     false,
+		},
+		{
+			name: "multiple files with changes",
+			mockOutput: `10	2	main.go
+5	8	util.go
+3	0	README.md`,
+			wantAdds:    18,
+			wantDeletes: 10,
+			wantErr:     false,
+		},
+		{
+			name:        "no changes",
+			mockOutput:  "",
+			wantAdds:    0,
+			wantDeletes: 0,
+			wantErr:     false,
+		},
+		{
+			name:        "git command fails",
+			mockOutput:  "",
+			mockErr:     errors.New("not a git repository"),
+			wantAdds:    0,
+			wantDeletes: 0,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockCommander{
+				RunFunc: func(dir string, args ...string) (string, error) {
+					return tt.mockOutput, tt.mockErr
+				},
+			}
+
+			adds, deletes, err := GetStatusStatsWithCmd(mock, "/test/path")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetStatusStatsWithCmd() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if adds != tt.wantAdds {
+				t.Errorf("GetStatusStatsWithCmd() adds = %v, want %v", adds, tt.wantAdds)
+			}
+			if deletes != tt.wantDeletes {
+				t.Errorf("GetStatusStatsWithCmd() deletes = %v, want %v", deletes, tt.wantDeletes)
+			}
+		})
+	}
+}
+
+func TestGetDetailedStatusStatsWithCmd(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput string
+		mockErr    error
+		want       []FileStats
+		wantErr    bool
+	}{
+		{
+			name:       "single file with changes",
+			mockOutput: `5	3	main.go`,
+			want: []FileStats{
+				{Path: "main.go", Adds: 5, Deletes: 3},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple files with changes",
+			mockOutput: `10	2	main.go
+5	8	util.go
+3	0	README.md`,
+			want: []FileStats{
+				{Path: "main.go", Adds: 10, Deletes: 2},
+				{Path: "util.go", Adds: 5, Deletes: 8},
+				{Path: "README.md", Adds: 3, Deletes: 0},
+			},
+			wantErr: false,
+		},
+		{
+			name:       "no changes",
+			mockOutput: "",
+			want:       nil,
+			wantErr:    false,
+		},
+		{
+			name:       "git command fails",
+			mockOutput: "",
+			mockErr:    errors.New("not a git repository"),
+			want:       nil,
+			wantErr:    true,
+		},
+		{
+			name:       "file with path containing spaces",
+			mockOutput: `5	3	path/to/my file.go`,
+			want: []FileStats{
+				{Path: "path/to/my file.go", Adds: 5, Deletes: 3},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockCommander{
+				RunFunc: func(dir string, args ...string) (string, error) {
+					return tt.mockOutput, tt.mockErr
+				},
+			}
+
+			got, err := GetDetailedStatusStatsWithCmd(mock, "/test/path")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetDetailedStatusStatsWithCmd() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("GetDetailedStatusStatsWithCmd() got %d files, want %d", len(got), len(tt.want))
+				return
+			}
+			for i, want := range tt.want {
+				if got[i].Path != want.Path {
+					t.Errorf("File %d: got path %v, want %v", i, got[i].Path, want.Path)
+				}
+				if got[i].Adds != want.Adds {
+					t.Errorf("File %d: got adds %v, want %v", i, got[i].Adds, want.Adds)
+				}
+				if got[i].Deletes != want.Deletes {
+					t.Errorf("File %d: got deletes %v, want %v", i, got[i].Deletes, want.Deletes)
+				}
+			}
+		})
+	}
+}
+
+func TestListWorktreesWithCmd(t *testing.T) {
+	tests := []struct {
+		name       string
+		mockOutput string
+		mockErr    error
+		wantCount  int
+		wantErr    bool
+	}{
+		{
+			name: "single worktree",
+			mockOutput: `worktree /path/to/main
+HEAD abcdef1234567890abcdef1234567890abcdef12
+branch refs/heads/main`,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name: "multiple worktrees",
+			mockOutput: `worktree /path/to/main
+HEAD abcdef1234567890abcdef1234567890abcdef12
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD 1234567890abcdef1234567890abcdefabcdef12
+branch refs/heads/feature/new`,
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name:       "git command fails",
+			mockOutput: "",
+			mockErr:    errors.New("not a git repository"),
+			wantCount:  0,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callCount := 0
+			mock := &MockCommander{
+				RunFunc: func(dir string, args ...string) (string, error) {
+					callCount++
+					// First call is worktree list
+					if callCount == 1 {
+						return tt.mockOutput, tt.mockErr
+					}
+					// Subsequent calls are for commit times
+					return "2 days ago", nil
+				},
+			}
+
+			got, err := ListWorktreesWithCmd(mock, "/test/repo")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListWorktreesWithCmd() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if len(got) != tt.wantCount {
+				t.Errorf("ListWorktreesWithCmd() got %d worktrees, want %d", len(got), tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestRemoveWorktreeWithCmd(t *testing.T) {
+	tests := []struct {
+		name    string
+		mockErr error
+		wantErr bool
+	}{
+		{
+			name:    "successful removal",
+			mockErr: nil,
+			wantErr: false,
+		},
+		{
+			name:    "removal fails",
+			mockErr: errors.New("worktree is locked"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockCommander{
+				RunFunc: func(dir string, args ...string) (string, error) {
+					return "", tt.mockErr
+				},
+			}
+
+			err := RemoveWorktreeWithCmd(mock, "/test/repo", "/test/worktree")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RemoveWorktreeWithCmd() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPruneWorktreesWithCmd(t *testing.T) {
+	tests := []struct {
+		name    string
+		mockErr error
+		wantErr bool
+	}{
+		{
+			name:    "successful prune",
+			mockErr: nil,
+			wantErr: false,
+		},
+		{
+			name:    "prune fails",
+			mockErr: errors.New("failed to prune"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockCommander{
+				RunFunc: func(dir string, args ...string) (string, error) {
+					return "", tt.mockErr
+				},
+			}
+
+			err := PruneWorktreesWithCmd(mock, "/test/repo")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PruneWorktreesWithCmd() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

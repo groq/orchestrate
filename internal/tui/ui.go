@@ -17,6 +17,7 @@ import (
 	"orchestrate/internal/tui/context"
 	"orchestrate/internal/tui/keys"
 	"orchestrate/launcher"
+	"orchestrate/terminal"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -194,6 +195,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.worktreeList, cmd = m.worktreeList.Update(msg)
 		return m, cmd
 
+	case worktrees.FocusWorktreeMsg:
+		// Focus existing iTerm window for this worktree
+		if msg.Worktree != nil {
+			m.ctx.SetStatus(fmt.Sprintf("Focusing window for: %s...", msg.Worktree.Name), false)
+			return m, m.doFocusWorktree(msg.Worktree)
+		}
+		return m, nil
+
+	case worktrees.WorktreeDetailsMsg:
+		// Show detailed worktree info in sidebar
+		if msg.Worktree != nil {
+			details := m.renderWorktreeDetails(msg.Worktree)
+			m.sidebar.SetContent(details)
+			if !m.sidebar.IsOpen {
+				m.sidebar.Toggle()
+				m.ctx.ToggleSidebar()
+				m.syncComponentDimensions()
+			}
+		}
+		return m, nil
+
+	case worktrees.OpenWorktreeMsg:
+		// Open worktree in iTerm with same preset
+		if msg.Worktree != nil && msg.Worktree.HasMeta {
+			m.ctx.SetStatus(fmt.Sprintf("Opening worktree: %s...", msg.Worktree.Name), false)
+			return m, m.doReopenWorktree(msg.Worktree)
+		} else if msg.Worktree != nil {
+			m.ctx.SetStatus("No preset info available for this worktree", true)
+		}
+		return m, nil
+
 	case launch.LaunchRequestMsg:
 		// Handle launch request
 		m.launching = true
@@ -310,6 +342,104 @@ func (m Model) doLaunch(req launch.LaunchRequestMsg) tea.Cmd {
 	}
 }
 
+func (m Model) doFocusWorktree(wt *worktrees.WorktreeItem) tea.Cmd {
+	return func() tea.Msg {
+		// Try to focus by path first
+		found, err := terminal.FocusWorktreeWindow(wt.Path)
+		if err == nil && found {
+			return LaunchResultMsg{
+				Sessions:  0,
+				Worktrees: 0,
+			}
+		}
+
+		// Fallback: try to focus by branch name
+		if wt.Branch != "" {
+			found, err = terminal.AlternativeFocusWorktreeWindow(wt.Branch)
+			if err == nil && found {
+				return LaunchResultMsg{
+					Sessions:  0,
+					Worktrees: 0,
+				}
+			}
+		}
+
+		// No existing window found
+		return LaunchResultMsg{
+			Err: fmt.Errorf("no existing iTerm window found for this worktree"),
+		}
+	}
+}
+
+func (m Model) doReopenWorktree(wt *worktrees.WorktreeItem) tea.Cmd {
+	return func() tea.Msg {
+		// Get preset from config
+		var preset config.Preset
+		if m.ctx.PresetConfig != nil && wt.PresetName != "" {
+			if p, ok := m.ctx.PresetConfig.GetPreset(wt.PresetName); ok {
+				preset = p
+			}
+		}
+
+		// Fallback: use agents from metadata
+		if len(preset) == 0 && len(wt.Agents) > 0 {
+			preset = config.Preset{{Agent: wt.Agents[0]}}
+		}
+
+		if len(preset) == 0 {
+			return LaunchResultMsg{Err: fmt.Errorf("no preset or agent information available")}
+		}
+
+		// Build sessions for this worktree
+		var sessions []terminal.SessionInfo
+		for _, agent := range wt.Agents {
+			sessions = append(sessions, terminal.SessionInfo{
+				Path:   wt.Path,
+				Branch: wt.Branch,
+				Agent:  agent,
+			})
+		}
+
+		// Add command sessions if in preset
+		for _, w := range preset {
+			for _, cmd := range w.Commands {
+				r, g, b, _ := config.ParseHexColor(cmd.Color)
+				sessions = append(sessions, terminal.SessionInfo{
+					IsCustomCommand: true,
+					Command:         cmd.Command,
+					Title:           cmd.GetTitle(),
+					ColorR:          r,
+					ColorG:          g,
+					ColorB:          b,
+					WorktreePath:    wt.Path,
+					WorktreeBranch:  wt.Branch,
+				})
+			}
+		}
+
+		if len(sessions) == 0 {
+			return LaunchResultMsg{Err: fmt.Errorf("no sessions to launch")}
+		}
+
+		// Connect to iTerm2 and launch sessions
+		mgr, err := terminal.NewManager("Orchestrate")
+		if err != nil {
+			return LaunchResultMsg{Err: fmt.Errorf("failed to connect to iTerm2: %w", err)}
+		}
+		defer mgr.Close()
+
+		windowCount, err := mgr.LaunchSessions(sessions, wt.Prompt)
+		if err != nil {
+			return LaunchResultMsg{Err: err}
+		}
+
+		return LaunchResultMsg{
+			Sessions:  len(sessions),
+			Worktrees: windowCount,
+		}
+	}
+}
+
 func (m Model) renderWorktreeDetails(wt *worktrees.WorktreeItem) string {
 	var lines []string
 
@@ -336,6 +466,38 @@ func (m Model) renderWorktreeDetails(wt *worktrees.WorktreeItem) string {
 		lines = append(lines, m.ctx.Styles.Common.FaintTextStyle.Render("Branch:"))
 		lines = append(lines, m.ctx.Styles.Settings.Value.Render("  "+wt.Branch))
 		lines = append(lines, "")
+	}
+
+	// Changes summary
+	if wt.Adds > 0 || wt.Deletes > 0 {
+		lines = append(lines, m.ctx.Styles.Settings.Category.Render("Changes:"))
+		lines = append(lines, "")
+		addStr := lipgloss.NewStyle().Foreground(m.ctx.Theme.SuccessText).Render(fmt.Sprintf("+%d", wt.Adds))
+		delStr := lipgloss.NewStyle().Foreground(m.ctx.Theme.ErrorText).Render(fmt.Sprintf("-%d", wt.Deletes))
+		lines = append(lines, fmt.Sprintf("  %s  %s", addStr, delStr))
+		lines = append(lines, "")
+
+		// File-level changes
+		if len(wt.FileStats) > 0 {
+			lines = append(lines, m.ctx.Styles.Common.FaintTextStyle.Render("Files changed:"))
+			maxFiles := 10
+			for i, fs := range wt.FileStats {
+				if i >= maxFiles {
+					remaining := len(wt.FileStats) - maxFiles
+					lines = append(lines, m.ctx.Styles.Common.FaintTextStyle.Render(
+						fmt.Sprintf("  ... and %d more files", remaining)))
+					break
+				}
+				addStr := lipgloss.NewStyle().Foreground(m.ctx.Theme.SuccessText).Render(fmt.Sprintf("+%d", fs.Adds))
+				delStr := lipgloss.NewStyle().Foreground(m.ctx.Theme.ErrorText).Render(fmt.Sprintf("-%d", fs.Deletes))
+				fileName := fs.Path
+				if len(fileName) > 30 {
+					fileName = "..." + fileName[len(fileName)-27:]
+				}
+				lines = append(lines, fmt.Sprintf("  %s %s  %s", addStr, delStr, fileName))
+			}
+			lines = append(lines, "")
+		}
 	}
 
 	// Preset and Agents

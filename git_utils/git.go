@@ -276,10 +276,22 @@ func FetchAndResetWithCmd(cmd Commander, repoPath string) error {
 	return nil
 }
 
+// FileStats represents statistics for a single file.
+type FileStats struct {
+	Path    string
+	Adds    int
+	Deletes int
+}
+
 // GetStatusStats returns the number of added and deleted lines in the worktree.
 func GetStatusStats(path string) (adds, deletes int, err error) {
+	return GetStatusStatsWithCmd(defaultCmd, path)
+}
+
+// GetStatusStatsWithCmd returns the number of added and deleted lines using a custom commander.
+func GetStatusStatsWithCmd(cmd Commander, path string) (adds, deletes int, err error) {
 	// Use git diff --numstat to get changes compared to HEAD
-	out, err := defaultCmd.Run(path, "diff", "HEAD", "--numstat")
+	out, err := cmd.Run(path, "diff", "HEAD", "--numstat")
 	if err != nil {
 		return 0, 0, err
 	}
@@ -299,4 +311,40 @@ func GetStatusStats(path string) (adds, deletes int, err error) {
 		}
 	}
 	return adds, deletes, nil
+}
+
+// GetDetailedStatusStats returns per-file statistics for changes in the worktree.
+func GetDetailedStatusStats(path string) ([]FileStats, error) {
+	return GetDetailedStatusStatsWithCmd(defaultCmd, path)
+}
+
+// GetDetailedStatusStatsWithCmd returns per-file statistics using a custom commander.
+func GetDetailedStatusStatsWithCmd(cmd Commander, path string) ([]FileStats, error) {
+	// Use git diff --numstat to get changes compared to HEAD
+	out, err := cmd.Run(path, "diff", "HEAD", "--numstat")
+	if err != nil {
+		return nil, err
+	}
+
+	var stats []FileStats
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		// Split on tabs to preserve spaces in file paths
+		// Format: <adds>\t<deletes>\t<path>
+		parts := strings.Split(line, "\t")
+		if len(parts) >= 3 {
+			var a, d int
+			fmt.Sscanf(parts[0], "%d", &a)
+			fmt.Sscanf(parts[1], "%d", &d)
+			stats = append(stats, FileStats{
+				Path:    parts[2],
+				Adds:    a,
+				Deletes: d,
+			})
+		}
+	}
+	return stats, nil
 }

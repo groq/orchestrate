@@ -270,3 +270,90 @@ func (m *Manager) TerminalWindowCount(n int) int {
 	}
 	return (n + m.MaxPerWindow - 1) / m.MaxPerWindow
 }
+
+// FocusWorktreeWindow finds and focuses an iTerm2 window containing a session for the given worktree path.
+// Returns true if a window was found and focused, false otherwise.
+func FocusWorktreeWindow(worktreePath string) (bool, error) {
+	// AppleScript to find and focus a window containing a session with the worktree path
+	script := fmt.Sprintf(`
+		tell application "iTerm2"
+			set foundWindow to missing value
+			repeat with aWindow in windows
+				repeat with aTab in tabs of aWindow
+					repeat with aSession in sessions of aTab
+						try
+							set sessionPath to (tty of aSession) as text
+							-- Check if any session in this window is in the worktree directory
+							if sessionPath contains "%s" then
+								set foundWindow to aWindow
+								exit repeat
+							end if
+						end try
+					end repeat
+					if foundWindow is not missing value then exit repeat
+				end repeat
+				if foundWindow is not missing value then exit repeat
+			end repeat
+
+			if foundWindow is not missing value then
+				select foundWindow
+				tell application "iTerm2" to activate
+				return true
+			else
+				return false
+			end if
+		end tell
+	`, worktreePath)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to run AppleScript: %w", err)
+	}
+
+	result := strings.TrimSpace(string(output))
+	return result == "true", nil
+}
+
+// AlternativeFocusWorktreeWindow uses a simpler approach to find windows by looking at window titles.
+// This is a fallback method if the tty-based approach doesn't work.
+func AlternativeFocusWorktreeWindow(branch string) (bool, error) {
+	// AppleScript to find a window with a session whose title contains the branch name
+	script := fmt.Sprintf(`
+		tell application "iTerm2"
+			set foundWindow to missing value
+			repeat with aWindow in windows
+				repeat with aTab in tabs of aWindow
+					repeat with aSession in sessions of aTab
+						try
+							set sessionName to (name of aSession) as text
+							if sessionName contains "%s" then
+								set foundWindow to aWindow
+								exit repeat
+							end if
+						end try
+					end repeat
+					if foundWindow is not missing value then exit repeat
+				end repeat
+				if foundWindow is not missing value then exit repeat
+			end repeat
+
+			if foundWindow is not missing value then
+				select foundWindow
+				tell application "iTerm2" to activate
+				return true
+			else
+				return false
+			end if
+		end tell
+	`, branch)
+
+	cmd := exec.Command("osascript", "-e", script)
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to run AppleScript: %w", err)
+	}
+
+	result := strings.TrimSpace(string(output))
+	return result == "true", nil
+}
