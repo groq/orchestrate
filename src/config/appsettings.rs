@@ -3,19 +3,14 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TerminalType {
+    #[default]
     #[serde(rename = "iterm2")]
     ITerm2,
     #[serde(rename = "terminal")]
     Terminal,
-}
-
-impl Default for TerminalType {
-    fn default() -> Self {
-        TerminalType::ITerm2
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,10 +152,6 @@ pub fn save_app_settings(dir: &Path, settings: &AppSettings) -> Result<()> {
     fs::write(&path, format!("{}{}", header, yaml))
         .with_context(|| format!("failed writing {}", path.display()))?;
     Ok(())
-}
-
-pub fn terminal_type_options() -> Vec<TerminalType> {
-    vec![TerminalType::ITerm2, TerminalType::Terminal]
 }
 
 pub fn theme_options() -> Vec<&'static str> {

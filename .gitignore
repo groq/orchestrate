@@ -1,6 +1,7 @@
 orchestrate
 .env
 .DS_Store
+.hermit
 
 # Added by cargo
 

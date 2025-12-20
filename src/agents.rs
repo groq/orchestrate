@@ -39,7 +39,3 @@ pub fn default_colors() -> HashMap<&'static str, RgbColor> {
 pub fn get_color(agent: &str) -> Option<RgbColor> {
     default_colors().get(agent).copied()
 }
-
-pub fn format_agents(list: &[String]) -> String {
-    list.join(", ")
-}

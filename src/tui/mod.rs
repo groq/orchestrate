@@ -7,13 +7,12 @@ use crate::terminal;
 use crate::util;
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use crossterm::ExecutableCommand;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Terminal;
+use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -21,6 +20,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap,
 };
+use ratatui::Terminal;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -48,6 +48,7 @@ pub fn run(
     data_dir: PathBuf,
     app_settings: AppSettings,
     preset_config: Option<PresetConfig>,
+    preset_error: Option<String>,
 ) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -57,7 +58,7 @@ pub fn run(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(data_dir, app_settings, preset_config);
+    let mut app = App::new(data_dir, app_settings, preset_config, preset_error);
     app.refresh_worktrees()?;
 
     let tick_rate = Duration::from_millis(250);
@@ -243,7 +244,7 @@ struct WorktreeItem {
 impl WorktreeItem {
     fn display_agent(&self) -> String {
         self.agents
-            .get(0)
+            .first()
             .cloned()
             .unwrap_or_else(|| "-".to_string())
     }
@@ -263,7 +264,7 @@ fn clean_log_line(line: String) -> String {
     }
     if cleaned.len() > 180 {
         cleaned.truncate(177);
-        cleaned.push_str("…");
+        cleaned.push('…');
     }
     cleaned
 }
@@ -337,6 +338,7 @@ impl App {
         data_dir: PathBuf,
         app_settings: AppSettings,
         preset_config: Option<PresetConfig>,
+        preset_error: Option<String>,
     ) -> Self {
         let preset_names = preset_config
             .as_ref()
@@ -350,13 +352,18 @@ impl App {
         let launch_form = LaunchForm::new(preset_names, default_preset);
         let settings_form = SettingsForm::new(app_settings.clone());
 
+        // Show error as initial status if there was a config parse error
+        let status = preset_error
+            .as_ref()
+            .map(|e| (format!("Config error: {}", e), true));
+
         App {
             data_dir,
             app_settings,
             preset_config,
             view: View::Worktrees,
             sidebar_open: false,
-            status: None,
+            status,
             help_expanded: false,
             actions_bar: false,
             should_quit: false,
@@ -460,8 +467,8 @@ impl App {
                             .metadata()
                             .ok()
                             .and_then(|m| m.modified().ok())
-                            .map(|t| DateTime::<Local>::from(t))
-                            .unwrap_or_else(|| Local::now())
+                            .map(DateTime::<Local>::from)
+                            .unwrap_or_else(Local::now)
                     });
                     if created_for_ret < cutoff {
                         let _ = std::fs::remove_dir_all(&wt_path);
@@ -769,22 +776,11 @@ impl App {
         use appsettings::TerminalType;
         match self.settings_form.focused {
             SettingsField::TerminalType => {
+                // Toggle between the two options regardless of direction
                 self.settings_form.app_settings.terminal.r#type =
                     match self.settings_form.app_settings.terminal.r#type {
-                        TerminalType::ITerm2 => {
-                            if delta > 0 {
-                                TerminalType::Terminal
-                            } else {
-                                TerminalType::ITerm2
-                            }
-                        }
-                        TerminalType::Terminal => {
-                            if delta > 0 {
-                                TerminalType::ITerm2
-                            } else {
-                                TerminalType::Terminal
-                            }
-                        }
+                        TerminalType::ITerm2 => TerminalType::Terminal,
+                        TerminalType::Terminal => TerminalType::ITerm2,
                     }
             }
             SettingsField::Maximize => {
@@ -1035,7 +1031,7 @@ impl App {
     }
 
     fn draw(&mut self, f: &mut Frame) {
-        let size = f.size();
+        let size = f.area();
         let mut constraints = vec![Constraint::Length(3), Constraint::Min(0)];
         if self.app_settings.ui.show_status_bar {
             constraints.push(Constraint::Length(1));
@@ -1074,7 +1070,7 @@ impl App {
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {
-        let tabs = vec![
+        let tabs = [
             ("Worktrees", View::Worktrees),
             ("Launch", View::Launch),
             ("Settings", View::Settings),
@@ -1098,20 +1094,27 @@ impl App {
             } else {
                 spans.push(Span::styled(
                     format!(" {} ", label),
-                    Style::default()
-                        .fg(DIM_TEXT)
-                        .add_modifier(Modifier::DIM),
+                    Style::default().fg(DIM_TEXT).add_modifier(Modifier::DIM),
                 ));
             }
         }
 
         let line = Line::from(spans);
         let nav_hint = Line::from(vec![
-            Span::styled("Tab", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Tab",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" navigate  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("?", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "?",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" help  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("Ctrl+C", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Ctrl+C",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" quit", Style::default().fg(DIM_TEXT)),
         ]);
 
@@ -1144,7 +1147,9 @@ impl App {
             Span::styled(" by ", Style::default().fg(DIM_TEXT)),
             Span::styled(
                 "Groq",
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]))
         .alignment(Alignment::Right)
@@ -1168,7 +1173,11 @@ impl App {
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
         let content = if let Some((msg, is_error)) = &self.status {
-            let color = if *is_error { ERROR_COLOR } else { SUCCESS_COLOR };
+            let color = if *is_error {
+                ERROR_COLOR
+            } else {
+                SUCCESS_COLOR
+            };
             Line::from(Span::styled(msg.clone(), Style::default().fg(color)))
         } else {
             Line::from(vec![
@@ -1216,13 +1225,24 @@ impl App {
                 ));
             let msg = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled("No worktrees found", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled(
+                    "No worktrees found",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )),
                 Line::from(""),
                 Line::from(vec![
                     Span::styled("Use the ", Style::default().fg(DIM_TEXT)),
-                    Span::styled("Launch", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Launch",
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(" view or ", Style::default().fg(DIM_TEXT)),
-                    Span::styled("CLI", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "CLI",
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(" to create sessions", Style::default().fg(DIM_TEXT)),
                 ]),
             ])
@@ -1315,26 +1335,33 @@ impl App {
         ]));
         summary_lines.push(Line::from(vec![
             Span::styled("Prompt  ", label_style),
-            Span::styled(prompt_preview.clone(), Style::default().fg(Color::Rgb(180, 180, 190))),
+            Span::styled(
+                prompt_preview.clone(),
+                Style::default().fg(Color::Rgb(180, 180, 190)),
+            ),
         ]));
         if !self.prompt_expanded && selected.map(|w| w.prompt.len() > 140).unwrap_or(false) {
             summary_lines.push(Line::from(vec![
                 Span::styled("         ", Style::default()),
                 Span::styled("press ", Style::default().fg(DIM_TEXT)),
-                Span::styled("e", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "e",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" to expand", Style::default().fg(DIM_TEXT)),
             ]));
         }
         summary_lines.push(Line::from("")); // spacer
 
-        let section_style = Style::default()
-            .fg(ACCENT)
-            .add_modifier(Modifier::BOLD);
+        let section_style = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
 
         summary_lines.push(Line::from(Span::styled("Recent Commits", section_style)));
         if let Some(wt) = selected {
             if wt.recent_commits.is_empty() {
-                summary_lines.push(Line::from(Span::styled("   No recent commits", Style::default().fg(DIM_TEXT))));
+                summary_lines.push(Line::from(Span::styled(
+                    "   No recent commits",
+                    Style::default().fg(DIM_TEXT),
+                )));
             } else {
                 for c in wt.recent_commits.iter().take(6) {
                     summary_lines.push(Line::from(vec![
@@ -1344,26 +1371,44 @@ impl App {
                 }
             }
         } else {
-            summary_lines.push(Line::from(Span::styled("   No selection", Style::default().fg(DIM_TEXT))));
+            summary_lines.push(Line::from(Span::styled(
+                "   No selection",
+                Style::default().fg(DIM_TEXT),
+            )));
         }
         summary_lines.push(Line::from("")); // spacer
 
         summary_lines.push(Line::from(Span::styled("Files Changed", section_style)));
         if let Some(wt) = selected {
             if wt.file_stats.is_empty() {
-                summary_lines.push(Line::from(Span::styled("   No uncommitted changes", Style::default().fg(DIM_TEXT))));
+                summary_lines.push(Line::from(Span::styled(
+                    "   No uncommitted changes",
+                    Style::default().fg(DIM_TEXT),
+                )));
             } else {
                 for fs in wt.file_stats.iter().take(10) {
                     summary_lines.push(Line::from(vec![
                         Span::styled("   ", Style::default()),
-                        Span::styled(format!("+{:<3}", fs.adds), Style::default().fg(SUCCESS_COLOR)),
-                        Span::styled(format!("-{:<3}", fs.deletes), Style::default().fg(ERROR_COLOR)),
-                        Span::styled(format!(" {}", fs.path), Style::default().fg(Color::Rgb(180, 180, 190))),
+                        Span::styled(
+                            format!("+{:<3}", fs.adds),
+                            Style::default().fg(SUCCESS_COLOR),
+                        ),
+                        Span::styled(
+                            format!("-{:<3}", fs.deletes),
+                            Style::default().fg(ERROR_COLOR),
+                        ),
+                        Span::styled(
+                            format!(" {}", fs.path),
+                            Style::default().fg(Color::Rgb(180, 180, 190)),
+                        ),
                     ]));
                 }
             }
         } else {
-            summary_lines.push(Line::from(Span::styled("   No selection", Style::default().fg(DIM_TEXT))));
+            summary_lines.push(Line::from(Span::styled(
+                "   No selection",
+                Style::default().fg(DIM_TEXT),
+            )));
         }
 
         let summary = Paragraph::new(summary_lines)
@@ -1413,15 +1458,24 @@ impl App {
             }
             activity_lines.push(Line::from("")); // spacer
             activity_lines.push(Line::from(Span::styled("Recent Output", section_style)));
-            activity_lines.push(Line::from(Span::styled("─".repeat(30), Style::default().fg(LIGHT_BORDER))));
+            activity_lines.push(Line::from(Span::styled(
+                "─".repeat(30),
+                Style::default().fg(LIGHT_BORDER),
+            )));
             if wt.activity_recent.is_empty() {
-                activity_lines.push(Line::from(Span::styled("No recent output", Style::default().fg(DIM_TEXT))));
+                activity_lines.push(Line::from(Span::styled(
+                    "No recent output",
+                    Style::default().fg(DIM_TEXT),
+                )));
             } else {
                 for line in &wt.activity_recent {
                     let lower = line.to_lowercase();
                     let line_style = if lower.contains("error") || lower.contains("fail") {
                         Style::default().fg(ERROR_COLOR)
-                    } else if lower.contains("success") || lower.contains("done") || lower.contains("complete") {
+                    } else if lower.contains("success")
+                        || lower.contains("done")
+                        || lower.contains("complete")
+                    {
                         Style::default().fg(SUCCESS_COLOR)
                     } else if lower.contains("warn") {
                         Style::default().fg(WARNING_COLOR)
@@ -1446,19 +1500,20 @@ impl App {
                 .wrap(Wrap { trim: true });
             f.render_widget(activity, columns[1]);
         } else {
-            let activity = Paragraph::new(Span::styled("No selection", Style::default().fg(DIM_TEXT)))
-                .block(
-                    Block::default()
-                        .title(Span::styled(
-                            " Agent Activity ",
-                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                        ))
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(LIGHT_BORDER))
-                        .style(Style::default().bg(SURFACE_BG)),
-                )
-                .wrap(Wrap { trim: false });
+            let activity =
+                Paragraph::new(Span::styled("No selection", Style::default().fg(DIM_TEXT)))
+                    .block(
+                        Block::default()
+                            .title(Span::styled(
+                                " Agent Activity ",
+                                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                            ))
+                            .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(Style::default().fg(LIGHT_BORDER))
+                            .style(Style::default().bg(SURFACE_BG)),
+                    )
+                    .wrap(Wrap { trim: false });
             f.render_widget(activity, columns[1]);
         }
 
@@ -1472,11 +1527,7 @@ impl App {
                 } else {
                     ("Idle", STATUS_IDLE_FG, STATUS_IDLE_BG)
                 };
-                let zebra = if idx % 2 == 0 {
-                    Some(ZEBRA_BG)
-                } else {
-                    None
-                };
+                let zebra = if idx % 2 == 0 { Some(ZEBRA_BG) } else { None };
                 let mut style = if idx == self.selected_worktree {
                     Style::default()
                         .bg(ACCENT_HIGHLIGHT_BG)
@@ -1510,9 +1561,7 @@ impl App {
                     Cell::from(wt.display_agent()),
                     Cell::from(Span::styled(
                         format!(" {} ", status_label),
-                        Style::default()
-                            .fg(status_fg)
-                            .bg(status_bg),
+                        Style::default().fg(status_fg).bg(status_bg),
                     )),
                     Cell::from(wt.last_commit.clone()),
                 ])
@@ -1560,13 +1609,25 @@ impl App {
 
         if self.actions_bar {
             let actions_text = Paragraph::new(Line::from(vec![
-                Span::styled("Enter", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" focus/open  ", Style::default().fg(DIM_TEXT)),
-                Span::styled("x", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "x",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" delete  ", Style::default().fg(DIM_TEXT)),
-                Span::styled("Ctrl+R", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Ctrl+R",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" refresh  ", Style::default().fg(DIM_TEXT)),
-                Span::styled("d", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "d",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" details", Style::default().fg(DIM_TEXT)),
             ]))
             .alignment(Alignment::Center)
@@ -1579,7 +1640,10 @@ impl App {
         if !self.show_details {
             let text = Paragraph::new(Line::from(vec![
                 Span::styled("Press ", Style::default().fg(DIM_TEXT)),
-                Span::styled("d", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "d",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" to toggle details", Style::default().fg(DIM_TEXT)),
             ]))
             .wrap(Wrap { trim: true })
@@ -1590,10 +1654,7 @@ impl App {
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(LIGHT_BORDER))
                     .style(Style::default().bg(SURFACE_BG))
-                    .title(Span::styled(
-                        " Details ",
-                        Style::default().fg(DIM_TEXT),
-                    )),
+                    .title(Span::styled(" Details ", Style::default().fg(DIM_TEXT))),
             );
             f.render_widget(text, area);
             return;
@@ -1605,11 +1666,12 @@ impl App {
 
             lines.push(Line::from(vec![Span::styled(
                 wt.name.clone(),
-                Style::default()
-                    .fg(ACCENT)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )]));
-            lines.push(Line::from(Span::styled("─".repeat(25), Style::default().fg(LIGHT_BORDER))));
+            lines.push(Line::from(Span::styled(
+                "─".repeat(25),
+                Style::default().fg(LIGHT_BORDER),
+            )));
             lines.push(Line::from(vec![
                 Span::styled("Path    ", label_style),
                 Span::styled(util::display_path(&wt.path), value_style),
@@ -1626,7 +1688,11 @@ impl App {
                 lines.push(Line::from(vec![
                     Span::styled("Preset  ", label_style),
                     Span::styled(
-                        if wt.preset_name.is_empty() { "—" } else { &wt.preset_name },
+                        if wt.preset_name.is_empty() {
+                            "—"
+                        } else {
+                            &wt.preset_name
+                        },
                         value_style,
                     ),
                 ]));
@@ -1654,7 +1720,10 @@ impl App {
                     "Prompt",
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 )));
-                lines.push(Line::from(Span::styled(wt.prompt.clone(), Style::default().fg(Color::Rgb(180, 180, 190)))));
+                lines.push(Line::from(Span::styled(
+                    wt.prompt.clone(),
+                    Style::default().fg(Color::Rgb(180, 180, 190)),
+                )));
             }
             if !wt.file_stats.is_empty() {
                 lines.push(Line::from(""));
@@ -1664,9 +1733,18 @@ impl App {
                 )));
                 for fs in wt.file_stats.iter().take(8) {
                     lines.push(Line::from(vec![
-                        Span::styled(format!("+{:<3}", fs.adds), Style::default().fg(SUCCESS_COLOR)),
-                        Span::styled(format!("-{:<3}", fs.deletes), Style::default().fg(ERROR_COLOR)),
-                        Span::styled(format!(" {}", fs.path), Style::default().fg(Color::Rgb(180, 180, 190))),
+                        Span::styled(
+                            format!("+{:<3}", fs.adds),
+                            Style::default().fg(SUCCESS_COLOR),
+                        ),
+                        Span::styled(
+                            format!("-{:<3}", fs.deletes),
+                            Style::default().fg(ERROR_COLOR),
+                        ),
+                        Span::styled(
+                            format!(" {}", fs.path),
+                            Style::default().fg(Color::Rgb(180, 180, 190)),
+                        ),
                     ]));
                 }
             }
@@ -1717,7 +1795,9 @@ impl App {
         // Form title
         let title = Paragraph::new(Span::styled(
             "Launch New Session",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center);
         f.render_widget(title, chunks[0]);
@@ -1725,7 +1805,10 @@ impl App {
         let repo = Paragraph::new(if self.launch_form.repo.is_empty() {
             Span::styled("owner/repo", Style::default().fg(DIM_TEXT))
         } else {
-            Span::styled(self.launch_form.repo.as_str(), Style::default().fg(Color::White))
+            Span::styled(
+                self.launch_form.repo.as_str(),
+                Style::default().fg(Color::White),
+            )
         })
         .block(self.input_block(
             "Repository",
@@ -1738,7 +1821,10 @@ impl App {
         let name = Paragraph::new(if self.launch_form.name.is_empty() {
             Span::styled("feature-name", Style::default().fg(DIM_TEXT))
         } else {
-            Span::styled(self.launch_form.name.as_str(), Style::default().fg(Color::White))
+            Span::styled(
+                self.launch_form.name.as_str(),
+                Style::default().fg(Color::White),
+            )
         })
         .block(self.input_block(
             "Branch prefix",
@@ -1751,7 +1837,10 @@ impl App {
         let prompt = Paragraph::new(if self.launch_form.prompt.is_empty() {
             Span::styled("What should the agent do?", Style::default().fg(DIM_TEXT))
         } else {
-            Span::styled(self.launch_form.prompt.as_str(), Style::default().fg(Color::White))
+            Span::styled(
+                self.launch_form.prompt.as_str(),
+                Style::default().fg(Color::White),
+            )
         })
         .block(self.input_block(
             "Prompt",
@@ -1768,9 +1857,17 @@ impl App {
                 let count = self.launch_form.preset_names.len();
                 Line::from(vec![
                     Span::styled("< ", Style::default().fg(ACCENT_DIM)),
-                    Span::styled(self.launch_form.preset(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        self.launch_form.preset(),
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(" >", Style::default().fg(ACCENT_DIM)),
-                    Span::styled(format!("   {}/{}", self.launch_form.preset_idx + 1, count), Style::default().fg(DIM_TEXT)),
+                    Span::styled(
+                        format!("   {}/{}", self.launch_form.preset_idx + 1, count),
+                        Style::default().fg(DIM_TEXT),
+                    ),
                 ])
             };
             Paragraph::new(text)
@@ -1792,23 +1889,40 @@ impl App {
             } else {
                 Style::default().fg(LIGHT_BORDER)
             })
-            .style(Style::default().bg(if btn_focused { ACCENT_HIGHLIGHT_BG } else { SURFACE_BG }));
+            .style(Style::default().bg(if btn_focused {
+                ACCENT_HIGHLIGHT_BG
+            } else {
+                SURFACE_BG
+            }));
         let btn = Paragraph::new(Span::styled(
             "Launch Session",
             Style::default()
                 .fg(if btn_focused { ACCENT } else { Color::White })
-                .add_modifier(if btn_focused { Modifier::BOLD } else { Modifier::empty() }),
+                .add_modifier(if btn_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ))
         .block(btn_block)
         .alignment(Alignment::Center);
         f.render_widget(btn, chunks[5]);
 
         let help = Paragraph::new(Line::from(vec![
-            Span::styled("Tab", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Tab",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" move  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("←/→", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "←/→",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" preset  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("Ctrl+Enter", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Ctrl+Enter",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" launch", Style::default().fg(DIM_TEXT)),
         ]))
         .alignment(Alignment::Center);
@@ -1824,7 +1938,11 @@ impl App {
             } else {
                 Style::default().fg(LIGHT_BORDER)
             })
-            .style(Style::default().bg(if focused { ACCENT_HIGHLIGHT_BG } else { SURFACE_BG }))
+            .style(Style::default().bg(if focused {
+                ACCENT_HIGHLIGHT_BG
+            } else {
+                SURFACE_BG
+            }))
             .title(Span::styled(
                 format!(" {} ", label),
                 Style::default().fg(if focused { ACCENT } else { DIM_TEXT }),
@@ -1883,7 +2001,10 @@ impl App {
                 "Retention Days".to_string(),
                 format!(
                     "< {} days >",
-                    self.settings_form.app_settings.session.worktree_retention_days
+                    self.settings_form
+                        .app_settings
+                        .session
+                        .worktree_retention_days
                 ),
                 self.settings_form.focused == SettingsField::RetentionDays,
             ),
@@ -1909,16 +2030,24 @@ impl App {
                     Style::default().fg(Color::Rgb(200, 205, 215)).bg(bg)
                 };
                 Row::new(vec![
-                    Cell::from(Span::styled(label.to_string(), if focused {
-                        Style::default().fg(ACCENT)
-                    } else {
-                        Style::default().fg(DIM_TEXT)
-                    })),
-                    Cell::from(Span::styled(value, if focused {
-                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::Rgb(180, 180, 190))
-                    })),
+                    Cell::from(Span::styled(
+                        label.to_string(),
+                        if focused {
+                            Style::default().fg(ACCENT)
+                        } else {
+                            Style::default().fg(DIM_TEXT)
+                        },
+                    )),
+                    Cell::from(Span::styled(
+                        value,
+                        if focused {
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::Rgb(180, 180, 190))
+                        },
+                    )),
                 ])
                 .style(style)
             })
@@ -1956,11 +2085,20 @@ impl App {
             .split(outer[1]);
 
         let help = Paragraph::new(Line::from(vec![
-            Span::styled("↑/↓", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "↑/↓",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" select  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("←/→", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "←/→",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" change  ", Style::default().fg(DIM_TEXT)),
-            Span::styled("Enter", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Enter",
+                Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" save", Style::default().fg(DIM_TEXT)),
         ]))
         .alignment(Alignment::Center);
@@ -1984,7 +2122,9 @@ impl App {
                 let mut lines: Vec<Line> = Vec::new();
                 lines.push(Line::from(Span::styled(
                     name.clone(),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 )));
                 lines.push(Line::from(Span::styled(
                     "─".repeat(40),
@@ -1994,7 +2134,10 @@ impl App {
                     lines.push(Line::from(vec![
                         Span::styled(format!("  {}. ", idx + 1), Style::default().fg(DIM_TEXT)),
                         Span::styled("Agent: ", Style::default().fg(DIM_TEXT)),
-                        Span::styled(wt.agent.clone(), Style::default().fg(Color::Rgb(180, 180, 190))),
+                        Span::styled(
+                            wt.agent.clone(),
+                            Style::default().fg(Color::Rgb(180, 180, 190)),
+                        ),
                     ]));
                     for cmd in &wt.commands {
                         let title = cmd.display_title();
@@ -2026,7 +2169,9 @@ impl App {
                 Line::from(""),
                 Line::from(Span::styled(
                     "No presets configured",
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
@@ -2055,11 +2200,13 @@ impl App {
     }
 
     fn draw_confirm_dialog(&self, f: &mut Frame) {
-        let area = centered_rect(45, 25, f.size());
+        let area = centered_rect(45, 25, f.area());
         let block = Block::default()
             .title(Span::styled(
                 " Delete Worktree ",
-                Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(ERROR_COLOR)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -2086,9 +2233,19 @@ impl App {
             Line::from(""),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Y", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Y",
+                    Style::default()
+                        .fg(ERROR_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" confirm  ", Style::default().fg(DIM_TEXT)),
-                Span::styled("N", Style::default().fg(SUCCESS_COLOR).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "N",
+                    Style::default()
+                        .fg(SUCCESS_COLOR)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" cancel", Style::default().fg(DIM_TEXT)),
             ]),
         ])
@@ -2099,7 +2256,7 @@ impl App {
     }
 
     fn draw_help_overlay(&self, f: &mut Frame) {
-        let area = centered_rect(65, 55, f.size());
+        let area = centered_rect(65, 55, f.area());
         let block = Block::default()
             .title(Span::styled(
                 " Keyboard Shortcuts ",
@@ -2116,17 +2273,35 @@ impl App {
                 "Global",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )),
-            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(Span::styled(
+                "─".repeat(50),
+                Style::default().fg(LIGHT_BORDER),
+            )),
             Line::from(vec![
-                Span::styled("  Tab      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Tab      ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Cycle between views", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  Ctrl+C   ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Ctrl+C   ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Quit application", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  ?        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  ?        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Toggle this help", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(""),
@@ -2134,37 +2309,80 @@ impl App {
                 "Worktrees View",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )),
-            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(Span::styled(
+                "─".repeat(50),
+                Style::default().fg(LIGHT_BORDER),
+            )),
             Line::from(vec![
-                Span::styled("  ↑/↓ j/k  ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  ↑/↓ j/k  ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Navigate worktrees", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  g/G      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  g/G      ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Jump to first/last", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  Enter    ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Enter    ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Focus or reopen session", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  o        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  o        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Open in terminal", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  d        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  d        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Toggle details sidebar", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  e        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  e        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Expand/collapse prompt", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  x        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  x        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Delete worktree", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  Ctrl+R   ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Ctrl+R   ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Refresh list", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(""),
@@ -2172,25 +2390,49 @@ impl App {
                 "Launch & Settings",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )),
-            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(Span::styled(
+                "─".repeat(50),
+                Style::default().fg(LIGHT_BORDER),
+            )),
             Line::from(vec![
-                Span::styled("  Tab      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Tab      ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Move between fields", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  ←/→      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  ←/→      ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Change preset/value", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(vec![
-                Span::styled("  Enter    ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Enter    ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("Submit/Save", Style::default().fg(DIM_TEXT)),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Press ", Style::default().fg(DIM_TEXT)),
-                Span::styled("Esc", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" or ", Style::default().fg(DIM_TEXT)),
-                Span::styled("?", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "?",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" to close", Style::default().fg(DIM_TEXT)),
             ]),
         ];

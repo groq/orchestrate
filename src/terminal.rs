@@ -1,5 +1,5 @@
 use crate::agents;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -134,7 +134,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
 
     if let Some(log) = &session.activity_log {
         let track_fn = format!(
-            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; ( \"$@\" 2>&1 | tee -a \"$LOG\" ); }}",
+            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
             log = log
         );
         cmd_parts.push(track_fn);
@@ -148,7 +148,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
     if let Some(agent) = &session.agent {
         if let Some(log) = &session.activity_log {
             cmd_parts.push(format!(
-                "LOG=\"{}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; ( {{ {} '{}'; }} 2>&1 | tee -a \"$LOG\" )",
+                "LOG=\"{}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
                 log, agent, escaped_prompt
             ));
         } else {
@@ -282,6 +282,7 @@ fn run_osascript(script: &str) -> Result<()> {
 }
 
 pub fn focus_worktree_window(worktree_path: &str) -> Result<bool> {
+    let escaped_path = osascript_escape(worktree_path);
     let script = format!(
         r#"
         tell application "iTerm2"
@@ -310,52 +311,12 @@ pub fn focus_worktree_window(worktree_path: &str) -> Result<bool> {
             end if
         end tell
         "#,
-        worktree_path
+        escaped_path
     );
 
     let output = Command::new("osascript").arg("-e").arg(script).output()?;
     let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(result == "true")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn agent_command_includes_track_alias_when_logging_enabled() {
-        let mut session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
-        session.activity_log = Some("/tmp/log.txt".to_string());
-        let cmd = build_agent_command(&session, "hello");
-
-        assert!(
-            cmd.contains("track(){ LOG=\"/tmp/log.txt\""),
-            "track alias should be defined with LOG path"
-        );
-        assert!(
-            cmd.contains("tee -a \"$LOG\""),
-            "agent command should pipe output to log"
-        );
-        assert!(
-            cmd.contains("codex 'hello'"),
-            "agent should be invoked with the prompt"
-        );
-    }
-
-    #[test]
-    fn agent_command_omits_track_alias_without_logging() {
-        let session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
-        let cmd = build_agent_command(&session, "hello");
-
-        assert!(
-            !cmd.contains("track(){"),
-            "track alias should not be present without a log path"
-        );
-        assert!(
-            !cmd.contains("tee -a \"$LOG\""),
-            "log piping should not be added without a log path"
-        );
-    }
 }
 
 fn maximize_window() -> Result<()> {
@@ -373,6 +334,7 @@ fn maximize_window() -> Result<()> {
 }
 
 pub fn focus_worktree_window_by_branch(branch: &str) -> Result<bool> {
+    let escaped_branch = osascript_escape(branch);
     let script = format!(
         r#"
         tell application "iTerm2"
@@ -401,10 +363,50 @@ pub fn focus_worktree_window_by_branch(branch: &str) -> Result<bool> {
             end if
         end tell
         "#,
-        branch
+        escaped_branch
     );
 
     let output = Command::new("osascript").arg("-e").arg(script).output()?;
     let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(result == "true")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_command_includes_track_alias_when_logging_enabled() {
+        let mut session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
+        session.activity_log = Some("/tmp/log.txt".to_string());
+        let cmd = build_agent_command(&session, "hello");
+
+        assert!(
+            cmd.contains("track(){ LOG=\"/tmp/log.txt\""),
+            "track alias should be defined with LOG path"
+        );
+        assert!(
+            cmd.contains("script -q -a"),
+            "agent command should use script to preserve TTY and log output"
+        );
+        assert!(
+            cmd.contains("codex 'hello'"),
+            "agent should be invoked with the prompt"
+        );
+    }
+
+    #[test]
+    fn agent_command_omits_track_alias_without_logging() {
+        let session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
+        let cmd = build_agent_command(&session, "hello");
+
+        assert!(
+            !cmd.contains("track(){"),
+            "track alias should not be present without a log path"
+        );
+        assert!(
+            !cmd.contains("script -q -a"),
+            "script logging should not be added without a log path"
+        );
+    }
 }

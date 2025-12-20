@@ -17,9 +17,9 @@ use std::fs;
     about = "Run AI coding agents in isolated git worktrees"
 )]
 struct Cli {
-    /// Launch the interactive TUI
+    /// Use CLI mode instead of TUI (requires --repo, --name, --prompt)
     #[arg(long)]
-    ui: bool,
+    cli: bool,
 
     /// GitHub repo to clone (owner/repo)
     #[arg(long)]
@@ -60,8 +60,14 @@ fn main() -> anyhow::Result<()> {
     let preset_config: Option<PresetConfig> = preset_result.config;
     let preset_path = preset_result.path.clone();
 
-    if cli.ui {
-        tui::run(data_dir.clone(), app_settings, preset_config)?;
+    // Default: launch TUI. Use --cli for CLI mode.
+    if !cli.cli {
+        tui::run(
+            data_dir.clone(),
+            app_settings,
+            preset_config,
+            preset_result.error.clone(),
+        )?;
         return Ok(());
     }
 
@@ -71,15 +77,23 @@ fn main() -> anyhow::Result<()> {
     let prompt = cli.prompt.clone().unwrap_or_default();
 
     if repo.is_empty() || name.is_empty() || prompt.is_empty() {
-        print_usage();
+        print_cli_usage();
         std::process::exit(1);
     }
 
     if preset_config.is_none() {
-        eprintln!(
-            "Error: settings.yaml not found. Please create one in {}",
-            util::display_path(data_dir.join("settings.yaml"))
-        );
+        if let Some(err) = &preset_result.error {
+            eprintln!(
+                "Error: {} in {}",
+                err,
+                util::display_path(data_dir.join("settings.yaml"))
+            );
+        } else {
+            eprintln!(
+                "Error: settings.yaml not found. Please create one in {}",
+                util::display_path(data_dir.join("settings.yaml"))
+            );
+        }
         std::process::exit(1);
     }
 
@@ -87,7 +101,7 @@ fn main() -> anyhow::Result<()> {
         "Settings: {}",
         preset_path
             .as_ref()
-            .map(|p| util::display_path(p))
+            .map(util::display_path)
             .unwrap_or_else(|| "not found".to_string())
     );
     println!("App Settings: {}", util::display_path(app_settings_path));
@@ -105,11 +119,11 @@ fn main() -> anyhow::Result<()> {
         .and_then(|cfg| preset::get_preset(cfg, &preset_name))
         .unwrap_or_else(|| {
             eprintln!(
-                "Warning: preset '{}' not found, using single droid agent",
+                "Warning: preset '{}' not found, using single claude agent",
                 preset_name
             );
             vec![preset::Worktree {
-                agent: "droid".to_string(),
+                agent: "claude".to_string(),
                 n: 1,
                 commands: vec![],
             }]
@@ -147,20 +161,21 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_usage() {
-    println!("Usage: orchestrate [options]");
-    println!();
-    println!("Modes:");
-    println!("  --ui              Launch the interactive TUI to manage settings");
-    println!();
-    println!("CLI Mode (requires --repo, --name, --prompt):");
-    println!("  --repo     GitHub repo to clone (owner/repo)");
-    println!("  --name     Branch name prefix for worktrees");
-    println!("  --prompt   Prompt to pass to each agent");
-    println!("  --preset   Preset name from settings.yaml (optional)");
-    println!("  --n        Multiplier for agent worktrees (optional)");
-    println!();
-    println!("Examples:");
-    println!("  orchestrate --ui");
-    println!("  orchestrate --repo owner/repo --name feature --prompt 'Fix bug'");
+fn print_cli_usage() {
+    eprintln!("CLI mode requires --repo, --name, and --prompt");
+    eprintln!();
+    eprintln!("Usage: orchestrate --cli --repo <owner/repo> --name <branch> --prompt <prompt>");
+    eprintln!();
+    eprintln!("Options:");
+    eprintln!("  --repo <owner/repo>   GitHub repo to clone");
+    eprintln!("  --name <branch>       Branch name prefix for worktrees");
+    eprintln!("  --prompt <prompt>     Prompt to pass to each agent");
+    eprintln!("  --preset <name>       Preset name from settings.yaml (optional)");
+    eprintln!("  --n <count>           Multiplier for agent worktrees (optional)");
+    eprintln!();
+    eprintln!("Example:");
+    eprintln!("  orchestrate --cli --repo owner/repo --name feature --prompt 'Fix bug'");
+    eprintln!();
+    eprintln!("Or run without --cli to launch the TUI:");
+    eprintln!("  orchestrate");
 }

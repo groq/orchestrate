@@ -3,7 +3,7 @@ use crate::config::session;
 use crate::git;
 use crate::terminal::{SessionInfo, TerminalManager};
 use crate::util;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::PathBuf;
 
@@ -22,7 +22,6 @@ pub struct Options {
 #[derive(Debug)]
 pub struct LaunchResult {
     pub sessions: Vec<SessionInfo>,
-    pub repo_path: PathBuf,
     pub terminal_window_count: usize,
 }
 
@@ -87,7 +86,7 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
                 &branch_name,
                 &opts.prompt,
                 &opts.preset_name,
-                &[w.agent.clone()],
+                std::slice::from_ref(&w.agent),
             );
             let _ = session::save_session_metadata(&worktree_path, &meta);
 
@@ -119,7 +118,6 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
 
     Ok(LaunchResult {
         sessions,
-        repo_path: repo_root,
         terminal_window_count: window_count,
     })
 }
@@ -138,8 +136,12 @@ pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(anyhow!("branch name prefix is required"));
     }
-    if name.contains(' ') || name.contains('/') || name.contains('\\') {
-        return Err(anyhow!("branch name cannot contain spaces or slashes"));
+    // Reject characters that could break shell commands or AppleScript
+    let forbidden = [' ', '/', '\\', '\'', '"', '`', '$'];
+    if name.chars().any(|c| forbidden.contains(&c)) {
+        return Err(anyhow!(
+            "branch name cannot contain spaces, slashes, quotes, backticks, or dollar signs"
+        ));
     }
     Ok(())
 }
@@ -166,9 +168,16 @@ mod tests {
     }
 
     #[test]
-    fn validate_name_disallows_spaces() {
+    fn validate_name_disallows_invalid_chars() {
         assert!(validate_name("good-name").is_ok());
+        assert!(validate_name("also_good123").is_ok());
         assert!(validate_name("bad name").is_err());
+        assert!(validate_name("bad'quote").is_err());
+        assert!(validate_name("bad\"quote").is_err());
+        assert!(validate_name("bad`tick").is_err());
+        assert!(validate_name("bad$dollar").is_err());
+        assert!(validate_name("bad/slash").is_err());
+        assert!(validate_name("bad\\backslash").is_err());
     }
 
     #[test]

@@ -1,32 +1,29 @@
-# Buildkite pipeline for Orchestrate
-
-env:
-  HERMIT_ENV: "${BUILDKITE_BUILD_CHECKOUT_PATH}"
-
-plugins: &hermit
-  elastic/hermit#v1.0.2: {}
+# Buildkite pipeline for Orchestrate (Rust)
 
 steps:
   - group: ":microscope: Test"
     key: "lint-and-test"
     steps:
-      - id: "golangci-lint"
-        label: ":golangci-lint: GolangCI Lint"
+      - id: "cargo-fmt"
+        label: ":rust: Cargo Fmt"
         commands:
-          - golangci-lint run ./...
-        plugins:
-          - *hermit
+          - eval "$(./bin/hermit env --activate)"
+          - cargo fmt --all -- --check
 
-      - id: "go-build"
-        label: ":go: Go Build"
+      - id: "cargo-clippy"
+        label: ":rust: Cargo Clippy"
         commands:
-          - go build -o orchestrate .
-        plugins:
-          - *hermit
+          - eval "$(./bin/hermit env --activate)"
+          - cargo clippy --all-targets --all-features -- -D warnings
 
-      - id: "run-tests"
-        label: ":go: Run Tests"
+      - id: "cargo-build"
+        label: ":rust: Cargo Build"
         commands:
-          - go test -v ./...
-        plugins:
-          - *hermit
+          - eval "$(./bin/hermit env --activate)"
+          - cargo build --release
+
+      - id: "cargo-test"
+        label: ":rust: Cargo Test"
+        commands:
+          - eval "$(./bin/hermit env --activate)"
+          - cargo test --all-features

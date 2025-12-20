@@ -1,4 +1,3 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -22,8 +21,8 @@ impl Command {
         if self.command.is_empty() {
             return "terminal".to_string();
         }
-        if self.command.len() > 30 {
-            format!("{}...", &self.command[..27])
+        if self.command.chars().count() > 30 {
+            format!("{}...", self.command.chars().take(27).collect::<String>())
         } else {
             self.command.clone()
         }
@@ -42,15 +41,15 @@ pub struct Worktree {
 
 impl Worktree {
     pub fn get_n(&self) -> i64 {
-        if self.n <= 0 { 1 } else { self.n }
+        if self.n <= 0 {
+            1
+        } else {
+            self.n
+        }
     }
 
     pub fn is_valid(&self) -> bool {
         !self.agent.is_empty()
-    }
-
-    pub fn has_commands(&self) -> bool {
-        !self.commands.is_empty()
     }
 }
 
@@ -70,6 +69,7 @@ pub const SETTINGS_FILE_NAME: &str = "settings.yaml";
 pub struct LoadResult {
     pub config: Option<Config>,
     pub path: Option<PathBuf>,
+    pub error: Option<String>,
 }
 
 pub fn load(dir: &Path) -> LoadResult {
@@ -78,25 +78,28 @@ pub fn load(dir: &Path) -> LoadResult {
         return LoadResult {
             config: None,
             path: None,
+            error: None,
         };
     }
 
     let data = match fs::read_to_string(&path) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
             return LoadResult {
                 config: None,
-                path: None,
+                path: Some(path),
+                error: Some(format!("failed to read file: {}", e)),
             };
         }
     };
 
     let config: Config = match serde_yaml::from_str(&data) {
         Ok(c) => c,
-        Err(_) => {
+        Err(e) => {
             return LoadResult {
                 config: None,
-                path: None,
+                path: Some(path),
+                error: Some(format!("failed to parse YAML: {}", e)),
             };
         }
     };
@@ -104,15 +107,8 @@ pub fn load(dir: &Path) -> LoadResult {
     LoadResult {
         config: Some(config),
         path: Some(path),
+        error: None,
     }
-}
-
-pub fn save_preset_config(dir: &Path, cfg: &Config) -> Result<()> {
-    let path = dir.join(SETTINGS_FILE_NAME);
-    let yaml = serde_yaml::to_string(cfg)?;
-    fs::create_dir_all(dir)?;
-    fs::write(&path, yaml).with_context(|| format!("failed writing {}", path.display()))?;
-    Ok(())
 }
 
 pub fn get_preset(cfg: &Config, name: &str) -> Option<Preset> {
@@ -133,9 +129,13 @@ pub fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
     if s.starts_with('#') {
         s = &s[1..];
     }
-    if s.len() != 6 {
+    // Use as_bytes() to safely handle multi-byte UTF-8 characters.
+    // Hex colors must be exactly 6 ASCII bytes (0-9, a-f, A-F).
+    let bytes = s.as_bytes();
+    if bytes.len() != 6 || !bytes.iter().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
+    // Safe to use string slicing now since we verified all bytes are ASCII hex digits
     let r = u8::from_str_radix(&s[0..2], 16).ok()?;
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
@@ -156,5 +156,7 @@ mod tests {
     fn parse_hex_color_invalid() {
         assert!(parse_hex_color("abc").is_none());
         assert!(parse_hex_color("#12345").is_none());
+        // Multi-byte UTF-8 that happens to be 6 bytes should not panic
+        assert!(parse_hex_color("€€").is_none()); // 2 euro signs = 6 bytes
     }
 }
