@@ -1,3 +1,7 @@
 orchestrate
 .env
 .DS_Store
+
+# Added by cargo
+
+/target

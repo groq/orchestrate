@@ -4,6 +4,8 @@
 
 **Run AI coding agents, custom dev environments, or both — each in their own git worktree**
 
+Now rewritten in **Rust** with a polished **Ratatui** interface.
+
 <br>
 
 ![droid](https://img.shields.io/badge/droid-ff8c00?style=for-the-badge&logoColor=white)
@@ -82,10 +84,11 @@ This clones/updates the repo from the main branch, creates isolated git worktree
 ## 📦 Installation
 
 ```bash
-go install github.com/groq/orchestrate@latest
+# from the repo root
+cargo install --path .
 ```
 
-**Requirements:** macOS with iTerm2, Go 1.21+, and your preferred AI coding agents installed.
+**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
 
 ---
 
@@ -233,6 +236,15 @@ presets:
 
 > 💡 Commands run in their parent agent's worktree and show the branch name in the title.
 
+### TUI Navigation (Ratatui)
+
+- `1/2/3/4` to jump to Worktrees / Launch / Settings / Presets
+- `Tab` / `Shift+Tab` cycles views
+- `?` toggles the help overlay
+- Worktrees: `↑/↓/g/G` navigate, `Enter` focus existing window, `o` reopen, `d` details sidebar, `x` delete with confirm, `Ctrl+R` refresh, `Ctrl+P` toggle sidebar
+- Launch: arrows or Tab to move, `Ctrl+Enter` or Launch button to start sessions, `←/→` cycle presets
+- Settings: `↑/↓` select, `←/→` toggle values, `Enter` saves
+
 ---
 
 ## 🔄 How It Works
@@ -274,13 +286,16 @@ Inside this directory:
 
 ```
 orchestrate/
-├── main.go           # CLI entry point
-├── config/           # YAML configuration loading
-├── git_utils/        # Git worktree operations
-├── agents/           # Agent parsing and colors
-├── terminal/         # iTerm2 window management
-├── internal/tui/     # Terminal UI (Bubble Tea)
-└── util/             # Utilities
+├── Cargo.toml        # Rust package manifest
+├── src/
+│   ├── main.rs       # CLI entry point (ui flag launches TUI)
+│   ├── util.rs       # Data dir helpers, random hex, path display
+│   ├── agents.rs     # Agent colors and helpers
+│   ├── git.rs        # Git worktree and status helpers
+│   ├── terminal.rs   # iTerm2 AppleScript/session grid logic
+│   ├── launcher.rs   # Worktree creation + session launching
+│   ├── config/       # settings.yaml + orchestrate.yaml + session metadata
+│   └── tui/          # Ratatui-driven UI (worktrees, launch form, settings)
 ```
 
 ---
@@ -293,6 +308,6 @@ The terminal UI is heavily inspired by and borrows design patterns from [**gh-da
 
 <div align="center">
 
-**Built with Go** • **Requires macOS + iTerm2**
+**Built with Rust + Ratatui** • **Requires macOS + iTerm2**
 
 </div>
