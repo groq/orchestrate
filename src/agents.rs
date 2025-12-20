@@ -9,9 +9,30 @@ pub struct RgbColor {
 
 pub fn default_colors() -> HashMap<&'static str, RgbColor> {
     HashMap::from([
-        ("droid", RgbColor { r: 255, g: 140, b: 0 }),
-        ("claude", RgbColor { r: 210, g: 180, b: 140 }),
-        ("codex", RgbColor { r: 30, g: 30, b: 30 }),
+        (
+            "droid",
+            RgbColor {
+                r: 255,
+                g: 140,
+                b: 0,
+            },
+        ),
+        (
+            "claude",
+            RgbColor {
+                r: 210,
+                g: 180,
+                b: 140,
+            },
+        ),
+        (
+            "codex",
+            RgbColor {
+                r: 30,
+                g: 30,
+                b: 30,
+            },
+        ),
     ])
 }
 

@@ -198,6 +198,18 @@ presets:
 
 Agents must be installed and available in your PATH.
 
+### 🪵 Tracking shell commands in the activity log
+
+Every agent shell defines a `track` helper when logging is enabled for that worktree. Use it to replace or rerun commands while keeping the activity panel up to date:
+
+```bash
+# inside the agent shell
+track npm test
+track ./bin/dev-server
+```
+
+`track` pipes stdout/stderr to the worktree’s activity log (e.g. `~/.orchestrate/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
+
 ---
 
 ## ⚙️ Configuration

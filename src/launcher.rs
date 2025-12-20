@@ -3,7 +3,7 @@ use crate::config::session;
 use crate::git;
 use crate::terminal::{SessionInfo, TerminalManager};
 use crate::util;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::PathBuf;
 
@@ -62,15 +62,23 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
         for _ in 0..effective_n {
             let suffix = util::random_hex(4);
             let branch_name = format!("{}-{}", opts.name, suffix);
-            let worktree_path =
-                worktrees_dir.join(format!("{}-{}", repo_root.file_name().unwrap().to_string_lossy(), branch_name));
+            let worktree_path = worktrees_dir.join(format!(
+                "{}-{}",
+                repo_root.file_name().unwrap().to_string_lossy(),
+                branch_name
+            ));
             let activity_path = opts
                 .data_dir
                 .join("activity")
                 .join(format!("{}.log", branch_name));
 
-            if let Err(err) = git::create_worktree(&repo_root, &worktree_path, &branch_name, base_branch) {
-                eprintln!("Warning: failed to create worktree {}: {}", branch_name, err);
+            if let Err(err) =
+                git::create_worktree(&repo_root, &worktree_path, &branch_name, base_branch)
+            {
+                eprintln!(
+                    "Warning: failed to create worktree {}: {}",
+                    branch_name, err
+                );
                 continue;
             }
 
@@ -84,7 +92,8 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
             let _ = session::save_session_metadata(&worktree_path, &meta);
 
             let worktree_path_str = worktree_path.to_string_lossy().to_string();
-            let mut agent_session = SessionInfo::agent_session(&worktree_path_str, &branch_name, &w.agent);
+            let mut agent_session =
+                SessionInfo::agent_session(&worktree_path_str, &branch_name, &w.agent);
             agent_session.activity_log = Some(activity_path.to_string_lossy().to_string());
             sessions.push(agent_session);
 

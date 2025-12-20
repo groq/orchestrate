@@ -1,5 +1,5 @@
 use crate::agents;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -132,6 +132,14 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
         cmd_parts.push(format!("cd \"{}\"", path));
     }
 
+    if let Some(log) = &session.activity_log {
+        let track_fn = format!(
+            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; ( \"$@\" 2>&1 | tee -a \"$LOG\" ); }}",
+            log = log
+        );
+        cmd_parts.push(track_fn);
+    }
+
     let mut escaped_prompt = prompt.replace('\'', "'\\''");
     if escaped_prompt.is_empty() {
         escaped_prompt = prompt.to_string();
@@ -210,13 +218,16 @@ fn build_window_script(chunk: &[SessionInfo], prompt: &str) -> String {
         }
         4 => {
             lines.push("tell s1 to set s2 to (split vertically with default profile)".to_string());
-            lines.push("tell s1 to set s3 to (split horizontally with default profile)".to_string());
-            lines.push("tell s2 to set s4 to (split horizontally with default profile)".to_string());
+            lines
+                .push("tell s1 to set s3 to (split horizontally with default profile)".to_string());
+            lines
+                .push("tell s2 to set s4 to (split horizontally with default profile)".to_string());
         }
         5 => {
             lines.push("tell s1 to set s2 to (split vertically with default profile)".to_string());
             lines.push("tell s2 to set s3 to (split vertically with default profile)".to_string());
-            lines.push("tell s1 to set s4 to (split horizontally with default profile)".to_string());
+            lines
+                .push("tell s1 to set s4 to (split horizontally with default profile)".to_string());
             lines
                 .push("tell s2 to set s5 to (split horizontally with default profile)".to_string());
         }
@@ -224,7 +235,8 @@ fn build_window_script(chunk: &[SessionInfo], prompt: &str) -> String {
             // 6 or more (capped at 6)
             lines.push("tell s1 to set s2 to (split vertically with default profile)".to_string());
             lines.push("tell s2 to set s3 to (split vertically with default profile)".to_string());
-            lines.push("tell s1 to set s4 to (split horizontally with default profile)".to_string());
+            lines
+                .push("tell s1 to set s4 to (split horizontally with default profile)".to_string());
             lines
                 .push("tell s2 to set s5 to (split horizontally with default profile)".to_string());
             lines
@@ -304,6 +316,46 @@ pub fn focus_worktree_window(worktree_path: &str) -> Result<bool> {
     let output = Command::new("osascript").arg("-e").arg(script).output()?;
     let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(result == "true")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_command_includes_track_alias_when_logging_enabled() {
+        let mut session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
+        session.activity_log = Some("/tmp/log.txt".to_string());
+        let cmd = build_agent_command(&session, "hello");
+
+        assert!(
+            cmd.contains("track(){ LOG=\"/tmp/log.txt\""),
+            "track alias should be defined with LOG path"
+        );
+        assert!(
+            cmd.contains("tee -a \"$LOG\""),
+            "agent command should pipe output to log"
+        );
+        assert!(
+            cmd.contains("codex 'hello'"),
+            "agent should be invoked with the prompt"
+        );
+    }
+
+    #[test]
+    fn agent_command_omits_track_alias_without_logging() {
+        let session = SessionInfo::agent_session("/tmp/repo", "branch-a", "codex");
+        let cmd = build_agent_command(&session, "hello");
+
+        assert!(
+            !cmd.contains("track(){"),
+            "track alias should not be present without a log path"
+        );
+        assert!(
+            !cmd.contains("tee -a \"$LOG\""),
+            "log piping should not be added without a log path"
+        );
+    }
 }
 
 fn maximize_window() -> Result<()> {

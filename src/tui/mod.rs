@@ -7,25 +7,48 @@ use crate::terminal;
 use crate::util;
 use anyhow::Result;
 use chrono::{DateTime, Local};
+use crossterm::ExecutableCommand;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::ExecutableCommand;
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Cell, Clear, Gauge, List, ListItem, Paragraph, Row, Sparkline, Table, Wrap,
+    Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap,
 };
-use ratatui::Terminal;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 type Frame<'a> = ratatui::Frame<'a>;
 
-pub fn run(data_dir: PathBuf, app_settings: AppSettings, preset_config: Option<PresetConfig>) -> Result<()> {
+// Modern color palette - warm orange theme
+const ACCENT: Color = Color::Rgb(255, 140, 0); // Orange accent
+const ACCENT_DIM: Color = Color::Rgb(180, 100, 0); // Dimmed orange
+const ACCENT_HIGHLIGHT_BG: Color = Color::Rgb(50, 40, 30); // Subtle warm tint for selected rows
+const STATUS_ACTIVE_BG: Color = Color::Rgb(40, 160, 80); // Green for active
+const STATUS_ACTIVE_FG: Color = Color::Rgb(180, 255, 200); // Light green text
+const STATUS_IDLE_BG: Color = Color::Rgb(180, 60, 60); // Red for idle
+const STATUS_IDLE_FG: Color = Color::Rgb(255, 200, 200); // Light red text
+const ZEBRA_BG: Color = Color::Rgb(28, 26, 24); // Darker, warmer zebra
+const LIGHT_BORDER: Color = Color::Rgb(80, 75, 70); // Subtle border
+const DIM_TEXT: Color = Color::Rgb(120, 110, 100); // Dimmed text
+const SURFACE_BG: Color = Color::Rgb(22, 20, 18); // Card background
+const HEADER_BG: Color = Color::Rgb(30, 28, 25); // Header background
+const SUCCESS_COLOR: Color = Color::Rgb(100, 220, 150); // Green for additions
+const ERROR_COLOR: Color = Color::Rgb(240, 100, 100); // Red for deletions/errors
+const WARNING_COLOR: Color = Color::Rgb(240, 180, 80); // Yellow for warnings
+
+pub fn run(
+    data_dir: PathBuf,
+    app_settings: AppSettings,
+    preset_config: Option<PresetConfig>,
+) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     stdout.execute(EnterAlternateScreen)?;
@@ -219,8 +242,30 @@ struct WorktreeItem {
 
 impl WorktreeItem {
     fn display_agent(&self) -> String {
-        self.agents.get(0).cloned().unwrap_or_else(|| "-".to_string())
+        self.agents
+            .get(0)
+            .cloned()
+            .unwrap_or_else(|| "-".to_string())
     }
+}
+
+fn clean_log_line(line: String) -> String {
+    let mut cleaned = String::new();
+    for ch in line.chars() {
+        if ch == '\t' {
+            cleaned.push_str("  ");
+            continue;
+        }
+        if ch.is_control() {
+            continue;
+        }
+        cleaned.push(ch);
+    }
+    if cleaned.len() > 180 {
+        cleaned.truncate(177);
+        cleaned.push_str("…");
+    }
+    cleaned
 }
 
 #[derive(Debug)]
@@ -268,6 +313,7 @@ struct App {
     sidebar_open: bool,
     status: Option<(String, bool)>,
     help_expanded: bool,
+    actions_bar: bool,
     should_quit: bool,
 
     // Worktrees
@@ -275,6 +321,7 @@ struct App {
     worktrees_loading: bool,
     selected_worktree: usize,
     show_details: bool,
+    prompt_expanded: bool,
     confirming_delete: bool,
     last_refresh: Instant,
 
@@ -286,7 +333,11 @@ struct App {
 }
 
 impl App {
-    fn new(data_dir: PathBuf, app_settings: AppSettings, preset_config: Option<PresetConfig>) -> Self {
+    fn new(
+        data_dir: PathBuf,
+        app_settings: AppSettings,
+        preset_config: Option<PresetConfig>,
+    ) -> Self {
         let preset_names = preset_config
             .as_ref()
             .map(|p| p.presets.keys().cloned().collect::<Vec<_>>())
@@ -307,11 +358,13 @@ impl App {
             sidebar_open: false,
             status: None,
             help_expanded: false,
+            actions_bar: false,
             should_quit: false,
             worktrees: Vec::new(),
             worktrees_loading: false,
             selected_worktree: 0,
             show_details: false,
+            prompt_expanded: false,
             confirming_delete: false,
             last_refresh: Instant::now(),
             launch_form,
@@ -335,7 +388,8 @@ impl App {
                 }
                 let name = entry.file_name().to_string_lossy().to_string();
                 let branch = git::current_branch(&wt_path).unwrap_or_else(|_| "-".to_string());
-                let last_commit = git::last_commit_time(&wt_path).unwrap_or_else(|_| "-".to_string());
+                let last_commit =
+                    git::last_commit_time(&wt_path).unwrap_or_else(|_| "-".to_string());
                 let repo_remote = git::remote_url(&wt_path).unwrap_or_default();
                 let repo_short = if repo_remote.contains("github.com") {
                     repo_remote
@@ -351,12 +405,20 @@ impl App {
                 let recent_commits = git::recent_commits(&wt_path, 3).unwrap_or_default();
 
                 let activity_path = if !branch.is_empty() {
-                    Some(self.data_dir.join("activity").join(format!("{}.log", branch)))
+                    Some(
+                        self.data_dir
+                            .join("activity")
+                            .join(format!("{}.log", branch)),
+                    )
                 } else {
                     None
                 };
                 let (activity_recent, activity_active) = if let Some(path) = &activity_path {
-                    let lines = util::tail_lines(path, 6).unwrap_or_default();
+                    let lines = util::tail_lines(path, 6)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(clean_log_line)
+                        .collect();
                     let active = util::modified_within(path, 10).unwrap_or(false);
                     (lines, active)
                 } else {
@@ -364,18 +426,30 @@ impl App {
                 };
 
                 let meta = session::load_session_metadata(&wt_path).ok();
-                let (has_meta, created_at, prompt, preset_name, agents, repo) = if let Some(m) = meta {
-                    (
-                        true,
-                        Some(m.created_at.with_timezone(&Local)),
-                        m.prompt,
-                        m.preset_name,
-                        m.agents,
-                        if repo_short.is_empty() { m.repo } else { repo_short.clone() },
-                    )
-                } else {
-                    (false, None, "".to_string(), "".to_string(), vec![], repo_short.clone())
-                };
+                let (has_meta, created_at, prompt, preset_name, agents, repo) =
+                    if let Some(m) = meta {
+                        (
+                            true,
+                            Some(m.created_at.with_timezone(&Local)),
+                            m.prompt,
+                            m.preset_name,
+                            m.agents,
+                            if repo_short.is_empty() {
+                                m.repo
+                            } else {
+                                repo_short.clone()
+                            },
+                        )
+                    } else {
+                        (
+                            false,
+                            None,
+                            "".to_string(),
+                            "".to_string(),
+                            vec![],
+                            repo_short.clone(),
+                        )
+                    };
 
                 // Auto-clean stale worktrees if enabled
                 if self.app_settings.session.auto_clean_worktrees {
@@ -429,7 +503,11 @@ impl App {
         // Refresh activity for all worktrees to keep status accurate
         for wt in &mut self.worktrees {
             if let Some(path) = &wt.activity_log {
-                wt.activity_recent = util::tail_lines(path, 10).unwrap_or_default();
+                wt.activity_recent = util::tail_lines(path, 10)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(clean_log_line)
+                    .collect();
                 wt.activity_active = util::modified_within(path, 10).unwrap_or(false);
             }
         }
@@ -446,33 +524,12 @@ impl App {
             return Ok(true);
         }
 
-        // Quick view selection via number keys
-        match key.code {
-            KeyCode::Char('1') => {
-                self.view = View::Worktrees;
-                return Ok(true);
-            }
-            KeyCode::Char('2') => {
-                self.view = View::Launch;
-                return Ok(true);
-            }
-            KeyCode::Char('3') => {
-                self.view = View::Settings;
-                return Ok(true);
-            }
-            KeyCode::Char('4') => {
-                self.view = View::Presets;
-                return Ok(true);
-            }
-            _ => {}
-        }
-
-        if key.code == KeyCode::Char('?') || (key.code == KeyCode::Char('/') && key.modifiers.contains(KeyModifiers::SHIFT)) {
-            self.help_expanded = !self.help_expanded;
+        if key.code == KeyCode::Char('?') {
+            self.actions_bar = !self.actions_bar;
             return Ok(true);
         }
-        if self.help_expanded && key.code == KeyCode::Esc {
-            self.help_expanded = false;
+        if self.actions_bar && key.code == KeyCode::Esc {
+            self.actions_bar = false;
             return Ok(true);
         }
 
@@ -529,28 +586,36 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.selected_worktree > 0 {
                     self.selected_worktree -= 1;
+                    self.prompt_expanded = false;
                 }
                 return Ok(true);
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if self.selected_worktree + 1 < self.worktrees.len() {
                     self.selected_worktree += 1;
+                    self.prompt_expanded = false;
                 }
                 return Ok(true);
             }
             KeyCode::Char('g') => {
                 self.selected_worktree = 0;
+                self.prompt_expanded = false;
                 return Ok(true);
             }
             KeyCode::Char('G') => {
                 if !self.worktrees.is_empty() {
                     self.selected_worktree = self.worktrees.len() - 1;
+                    self.prompt_expanded = false;
                 }
                 return Ok(true);
             }
             KeyCode::Char('d') => {
                 self.show_details = !self.show_details;
                 self.sidebar_open = self.show_details;
+                return Ok(true);
+            }
+            KeyCode::Char('e') => {
+                self.prompt_expanded = !self.prompt_expanded;
                 return Ok(true);
             }
             KeyCode::Char('o') => {
@@ -604,7 +669,9 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) || self.launch_form.focused == LaunchField::Launch {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || self.launch_form.focused == LaunchField::Launch
+                {
                     self.submit_launch_form()?;
                     return Ok(true);
                 }
@@ -675,17 +742,17 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.settings_form.focused == SettingsField::DefaultPreset {
-                    self.settings_form
-                        .app_settings
-                        .session
-                        .default_preset
-                        .pop();
+                    self.settings_form.app_settings.session.default_preset.pop();
                     return Ok(true);
                 }
             }
             KeyCode::Char(c) => {
                 if self.settings_form.focused == SettingsField::DefaultPreset {
-                    self.settings_form.app_settings.session.default_preset.push(c);
+                    self.settings_form
+                        .app_settings
+                        .session
+                        .default_preset
+                        .push(c);
                     return Ok(true);
                 }
             }
@@ -702,14 +769,23 @@ impl App {
         use appsettings::TerminalType;
         match self.settings_form.focused {
             SettingsField::TerminalType => {
-                self.settings_form.app_settings.terminal.r#type = match self.settings_form.app_settings.terminal.r#type {
-                    TerminalType::ITerm2 => {
-                        if delta > 0 { TerminalType::Terminal } else { TerminalType::ITerm2 }
+                self.settings_form.app_settings.terminal.r#type =
+                    match self.settings_form.app_settings.terminal.r#type {
+                        TerminalType::ITerm2 => {
+                            if delta > 0 {
+                                TerminalType::Terminal
+                            } else {
+                                TerminalType::ITerm2
+                            }
+                        }
+                        TerminalType::Terminal => {
+                            if delta > 0 {
+                                TerminalType::ITerm2
+                            } else {
+                                TerminalType::Terminal
+                            }
+                        }
                     }
-                    TerminalType::Terminal => {
-                        if delta > 0 { TerminalType::ITerm2 } else { TerminalType::Terminal }
-                    }
-                }
             }
             SettingsField::Maximize => {
                 if delta != 0 {
@@ -738,7 +814,12 @@ impl App {
                     let mut names = cfg.presets.keys().cloned().collect::<Vec<_>>();
                     names.sort();
                     if !names.is_empty() {
-                        let current = self.settings_form.app_settings.session.default_preset.clone();
+                        let current = self
+                            .settings_form
+                            .app_settings
+                            .session
+                            .default_preset
+                            .clone();
                         let idx = names.iter().position(|n| n == &current).unwrap_or(0);
                         let mut new_idx = idx as i32 + delta;
                         if new_idx < 0 {
@@ -759,9 +840,16 @@ impl App {
                 }
             }
             SettingsField::RetentionDays => {
-                let mut days = self.settings_form.app_settings.session.worktree_retention_days;
+                let mut days = self
+                    .settings_form
+                    .app_settings
+                    .session
+                    .worktree_retention_days;
                 days = (days as i32 + delta).clamp(1, 365) as i64;
-                self.settings_form.app_settings.session.worktree_retention_days = days;
+                self.settings_form
+                    .app_settings
+                    .session
+                    .worktree_retention_days = days;
             }
         }
     }
@@ -779,11 +867,13 @@ impl App {
                 .preset_config
                 .as_ref()
                 .and_then(|cfg| preset::get_preset(cfg, &preset_name))
-                .unwrap_or_else(|| vec![preset::Worktree {
-                    agent: "claude".to_string(),
-                    n: 1,
-                    commands: vec![],
-                }]);
+                .unwrap_or_else(|| {
+                    vec![preset::Worktree {
+                        agent: "claude".to_string(),
+                        n: 1,
+                        commands: vec![],
+                    }]
+                });
             let opts = launcher::Options {
                 repo: repo.clone(),
                 name: name.clone(),
@@ -889,8 +979,15 @@ impl App {
                 return Ok(());
             }
 
+            // Use saved prompt when reopening; fall back to a simple continuation prompt.
+            let prompt = if !wt.prompt.is_empty() {
+                wt.prompt.clone()
+            } else {
+                format!("Continue working on {}", wt.branch)
+            };
+
             let mgr = terminal::TerminalManager::new(self.app_settings.terminal.maximize_on_launch);
-            match mgr.launch_sessions(&sessions, "") {
+            match mgr.launch_sessions(&sessions, &prompt) {
                 Ok(_count) => {
                     self.set_status(
                         &format!("Opened {} session(s) for {}", sessions.len(), wt.name),
@@ -977,61 +1074,87 @@ impl App {
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {
-        let tabs = vec!["Worktrees", "Launch", "Settings", "Presets"];
-        let spans: Vec<Span> = tabs
-            .iter()
-            .enumerate()
-            .map(|(idx, label)| {
-                let active = match (self.view, idx) {
-                    (View::Worktrees, 0) => true,
-                    (View::Launch, 1) => true,
-                    (View::Settings, 2) => true,
-                    (View::Presets, 3) => true,
-                    _ => false,
-                };
-                if active {
-                    Span::styled(
-                        format!(" {} ", label),
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else {
-                    Span::styled(
-                        format!(" {} ", label),
-                        Style::default()
-                            .fg(Color::Gray)
-                            .bg(Color::DarkGray),
-                    )
-                }
-            })
-            .collect();
-        let line = Line::from(spans);
-        let mut title_line = Span::styled(
-            "Orchestrate",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        );
-        let nav_hint = Span::styled(
-            " 1:Worktrees • 2:Launch • 3:Settings • 4:Presets • Tab/Shift+Tab cycle ",
-            Style::default().fg(Color::Gray),
-        );
-        if !self.app_settings.ui.show_status_bar {
-            if let Some((msg, is_err)) = &self.status {
-                let color = if *is_err { Color::Red } else { Color::Green };
-                title_line = Span::styled(
-                    format!("Orchestrate — {}", msg),
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                );
+        let tabs = vec![
+            ("Worktrees", View::Worktrees),
+            ("Launch", View::Launch),
+            ("Settings", View::Settings),
+            ("Presets", View::Presets),
+        ];
+
+        let mut spans: Vec<Span> = Vec::new();
+        for (idx, (label, view)) in tabs.iter().enumerate() {
+            let active = self.view == *view;
+            if idx > 0 {
+                spans.push(Span::styled("  ", Style::default()));
+            }
+            if active {
+                spans.push(Span::styled(
+                    format!(" {} ", label),
+                    Style::default()
+                        .fg(Color::Rgb(20, 22, 28))
+                        .bg(ACCENT)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    format!(" {} ", label),
+                    Style::default()
+                        .fg(DIM_TEXT)
+                        .add_modifier(Modifier::DIM),
+                ));
             }
         }
+
+        let line = Line::from(spans);
+        let nav_hint = Line::from(vec![
+            Span::styled("Tab", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" navigate  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("?", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" help  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("Ctrl+C", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" quit", Style::default().fg(DIM_TEXT)),
+        ]);
+
         let block = Block::default()
             .borders(Borders::BOTTOM)
-            .border_type(BorderType::Rounded)
-            .title(title_line)
-            .title_bottom(nav_hint);
-        let paragraph = Paragraph::new(line).block(block);
-        f.render_widget(paragraph, area);
+            .border_type(BorderType::Plain)
+            .border_style(Style::default().fg(LIGHT_BORDER))
+            .style(Style::default().bg(HEADER_BG));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)].as_ref())
+            .split(inner);
+
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(65), Constraint::Percentage(35)].as_ref())
+            .split(rows[0]);
+
+        let tabs_para = Paragraph::new(line).style(Style::default().bg(HEADER_BG));
+        f.render_widget(tabs_para, cols[0]);
+
+        let logo = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "Orchestrate",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" by ", Style::default().fg(DIM_TEXT)),
+            Span::styled(
+                "Groq",
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .alignment(Alignment::Right)
+        .style(Style::default().bg(HEADER_BG));
+        f.render_widget(logo, cols[1]);
+
+        let nav = Paragraph::new(nav_hint)
+            .alignment(Alignment::Center)
+            .style(Style::default().bg(HEADER_BG));
+        f.render_widget(nav, rows[1]);
     }
 
     fn draw_body(&self, f: &mut Frame, area: Rect) {
@@ -1044,232 +1167,299 @@ impl App {
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
-        let (msg, color) = if let Some((msg, is_error)) = &self.status {
-            let c = if *is_error { Color::Red } else { Color::Green };
-            (msg.clone(), c)
+        let content = if let Some((msg, is_error)) = &self.status {
+            let color = if *is_error { ERROR_COLOR } else { SUCCESS_COLOR };
+            Line::from(Span::styled(msg.clone(), Style::default().fg(color)))
         } else {
-            ("Ctrl+C to quit • Tab to switch views".to_string(), Color::Gray)
+            Line::from(vec![
+                Span::styled("Ready  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("|  ", Style::default().fg(LIGHT_BORDER)),
+                Span::styled("Ctrl+C", Style::default().fg(ACCENT_DIM)),
+                Span::styled(" quit  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("Tab", Style::default().fg(ACCENT_DIM)),
+                Span::styled(" switch views", Style::default().fg(DIM_TEXT)),
+            ])
         };
-        let block = Block::default().borders(Borders::TOP);
-        let text = Paragraph::new(msg).style(Style::default().fg(color)).block(block);
+        let block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(LIGHT_BORDER))
+            .style(Style::default().bg(HEADER_BG));
+        let text = Paragraph::new(content).block(block);
         f.render_widget(text, area);
     }
 
     fn draw_worktrees(&self, f: &mut Frame, area: Rect) {
         if self.worktrees_loading {
-            let text = Paragraph::new("Loading worktrees...").style(Style::default().fg(Color::Cyan));
+            let loading_block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(LIGHT_BORDER))
+                .style(Style::default().bg(SURFACE_BG));
+            let text = Paragraph::new(Line::from(vec![
+                Span::styled("◐ ", Style::default().fg(ACCENT)),
+                Span::styled("Loading worktrees...", Style::default().fg(DIM_TEXT)),
+            ]))
+            .block(loading_block)
+            .alignment(Alignment::Center);
             f.render_widget(text, area);
             return;
         }
         if self.worktrees.is_empty() {
-            let msg = "No worktrees found. Use the launch view or CLI to create sessions.";
-            let text = Paragraph::new(msg).style(Style::default().fg(Color::Gray));
-            f.render_widget(text, area);
+            let empty_block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(LIGHT_BORDER))
+                .style(Style::default().bg(SURFACE_BG))
+                .title(Span::styled(
+                    " Worktrees ",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ));
+            let msg = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("No worktrees found", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Use the ", Style::default().fg(DIM_TEXT)),
+                    Span::styled("Launch", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(" view or ", Style::default().fg(DIM_TEXT)),
+                    Span::styled("CLI", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(" to create sessions", Style::default().fg(DIM_TEXT)),
+                ]),
+            ])
+            .block(empty_block)
+            .alignment(Alignment::Center);
+            f.render_widget(msg, area);
             return;
         }
 
-        let total_adds: i32 = self.worktrees.iter().map(|w| w.adds).sum();
-        let total_dels: i32 = self.worktrees.iter().map(|w| w.deletes).sum();
         let selected = self.worktrees.get(self.selected_worktree);
 
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(7), Constraint::Min(0)].as_ref())
-            .split(area);
-
-        // Metrics bar inspired by ratatui docs components
-        let adds_bar = Gauge::default()
-            .block(
-                Block::default()
-                    .title("Adds")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .gauge_style(Style::default().fg(Color::Green).bg(Color::Black))
-            .ratio(if total_adds + total_dels == 0 {
-                0.0
-            } else {
-                (total_adds as f64) / (total_adds + total_dels) as f64
-            });
-        let dels_bar = Gauge::default()
-            .block(
-                Block::default()
-                    .title("Deletes")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .gauge_style(Style::default().fg(Color::Red).bg(Color::Black))
-            .ratio(if total_adds + total_dels == 0 {
-                0.0
-            } else {
-                (total_dels as f64) / (total_adds + total_dels) as f64
-            });
-        let spark_data = selected
-            .map(|w| vec![w.adds as u64, w.deletes as u64])
-            .unwrap_or_else(|| vec![0, 0]);
-        let spark = Sparkline::default()
-            .block(
-                Block::default()
-                    .title("Selected (+/-)")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .data(&spark_data)
-            .style(Style::default().fg(Color::Cyan));
-        let totals = Paragraph::new(Line::from(vec![
-            Span::styled(format!("Worktrees: {}", self.worktrees.len()), Style::default().fg(Color::Cyan)),
-            Span::raw("   "),
-            Span::styled(
-                format!(
-                    "Dirty: {}",
-                    self.worktrees.iter().filter(|w| w.adds + w.deletes > 0).count()
-                ),
-                Style::default().fg(Color::Yellow),
-            ),
-            Span::raw("   "),
-            Span::styled(
-                format!("With metadata: {}", self.worktrees.iter().filter(|w| w.has_meta).count()),
-                Style::default().fg(Color::Green),
-            ),
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Overview"),
-        );
-
-        let metrics = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(
-                [
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(25),
-                ]
-                .as_ref(),
-            )
-            .split(layout[0]);
-        f.render_widget(adds_bar, metrics[0]);
-        f.render_widget(dels_bar, metrics[1]);
-        f.render_widget(spark, metrics[2]);
-        f.render_widget(totals, metrics[3]);
-
-        // Clean layout: summary table, left (commits + files), right full-height activity, then table
-        let sections = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(5), Constraint::Length(12), Constraint::Min(0)].as_ref())
-            .split(area);
-
-        // Summary as table
-        let summary_rows = if let Some(wt) = selected {
-            vec![
-                Row::new(vec![Cell::from("Repo"), Cell::from(wt.repo.clone())]),
-                Row::new(vec![Cell::from("Branch"), Cell::from(wt.branch.clone())]),
-                Row::new(vec![Cell::from("Agent"), Cell::from(if wt.agents.is_empty() { "-".to_string() } else { wt.agents.join(", ") })]),
-                Row::new(vec![Cell::from("Δ"), Cell::from(format!("+{} / -{}", wt.adds, wt.deletes))]),
-            ]
+        // Optional actions bar at bottom
+        let main_sections = if self.actions_bar {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
+                .split(area)
         } else {
-            vec![
-                Row::new(vec![Cell::from("Repo"), Cell::from("-")]),
-                Row::new(vec![Cell::from("Branch"), Cell::from("-")]),
-                Row::new(vec![Cell::from("Agent"), Cell::from("-")]),
-                Row::new(vec![Cell::from("Δ"), Cell::from("-")]),
-            ]
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0)].as_ref())
+                .split(area)
         };
-        let summary = Table::new(summary_rows, [Constraint::Length(8), Constraint::Min(0)])
-            .block(
-                Block::default()
-                    .title("Current • Enter: focus→open • o: open • x: delete • Ctrl+R: refresh")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .column_spacing(1);
-        f.render_widget(summary, sections[0]);
 
-        // Middle row split: left (commits + files) and right (activity stream, full height)
-        let mid = Layout::default()
+        // Two columns: left (combined summary) and right (full-height activity)
+        let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(65), Constraint::Percentage(35)].as_ref())
-            .split(sections[1]);
+            .split(main_sections[0]);
 
-        let left_mid = Layout::default()
+        let left_sections = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(mid[0]);
+            .constraints([Constraint::Percentage(45), Constraint::Min(0)].as_ref())
+            .split(columns[0]);
 
-        let mut commits_lines = vec![];
+        // Combined summary block with repo/branch/agent plus commits and files
+        let mut summary_lines: Vec<Line> = Vec::new();
+        let repo_text = selected
+            .and_then(|w| {
+                if w.repo.is_empty() {
+                    None
+                } else {
+                    Some(w.repo.clone())
+                }
+            })
+            .unwrap_or_else(|| "—".to_string());
+        let branch_text = selected
+            .and_then(|w| {
+                if w.branch.is_empty() {
+                    None
+                } else {
+                    Some(w.branch.clone())
+                }
+            })
+            .unwrap_or_else(|| "—".to_string());
+        let agent_text = selected
+            .map(|w| {
+                if w.agents.is_empty() {
+                    "—".to_string()
+                } else {
+                    w.agents.join(", ")
+                }
+            })
+            .unwrap_or_else(|| "—".to_string());
+
+        let mut prompt_preview = selected
+            .map(|w| w.prompt.clone())
+            .unwrap_or_else(|| "—".to_string());
+        if prompt_preview.is_empty() {
+            prompt_preview = "—".to_string();
+        } else if !self.prompt_expanded && prompt_preview.len() > 140 {
+            prompt_preview.truncate(140);
+            prompt_preview.push_str("… ");
+        }
+
+        let label_style = Style::default().fg(DIM_TEXT);
+        let value_style = Style::default().fg(Color::White);
+
+        summary_lines.push(Line::from(vec![
+            Span::styled("Repo    ", label_style),
+            Span::styled(repo_text, value_style),
+        ]));
+        summary_lines.push(Line::from(vec![
+            Span::styled("Branch  ", label_style),
+            Span::styled(branch_text, value_style),
+        ]));
+        summary_lines.push(Line::from(vec![
+            Span::styled("Agent   ", label_style),
+            Span::styled(agent_text, value_style),
+        ]));
+        summary_lines.push(Line::from(vec![
+            Span::styled("Prompt  ", label_style),
+            Span::styled(prompt_preview.clone(), Style::default().fg(Color::Rgb(180, 180, 190))),
+        ]));
+        if !self.prompt_expanded && selected.map(|w| w.prompt.len() > 140).unwrap_or(false) {
+            summary_lines.push(Line::from(vec![
+                Span::styled("         ", Style::default()),
+                Span::styled("press ", Style::default().fg(DIM_TEXT)),
+                Span::styled("e", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" to expand", Style::default().fg(DIM_TEXT)),
+            ]));
+        }
+        summary_lines.push(Line::from("")); // spacer
+
+        let section_style = Style::default()
+            .fg(ACCENT)
+            .add_modifier(Modifier::BOLD);
+
+        summary_lines.push(Line::from(Span::styled("Recent Commits", section_style)));
         if let Some(wt) = selected {
             if wt.recent_commits.is_empty() {
-                commits_lines.push("No recent commits".to_string());
+                summary_lines.push(Line::from(Span::styled("   No recent commits", Style::default().fg(DIM_TEXT))));
             } else {
-                commits_lines.extend(wt.recent_commits.iter().cloned());
-            }
-        }
-        let commits = Paragraph::new(commits_lines.join("\n"))
-            .block(
-                Block::default()
-                    .title("Recent Commits")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
-            )
-            .wrap(Wrap { trim: false });
-        f.render_widget(commits, left_mid[0]);
-
-        let mut files_lines = vec![];
-        if let Some(wt) = selected {
-            if wt.file_stats.is_empty() {
-                files_lines.push("No uncommitted changes".to_string());
-            } else {
-                for fs in wt.file_stats.iter().take(10) {
-                    files_lines.push(format!("+{} -{} {}", fs.adds, fs.deletes, fs.path));
+                for c in wt.recent_commits.iter().take(6) {
+                    summary_lines.push(Line::from(vec![
+                        Span::styled("   ", Style::default()),
+                        Span::styled(c.clone(), Style::default().fg(Color::Rgb(180, 180, 190))),
+                    ]));
                 }
             }
+        } else {
+            summary_lines.push(Line::from(Span::styled("   No selection", Style::default().fg(DIM_TEXT))));
         }
-        let files = Paragraph::new(files_lines.join("\n"))
+        summary_lines.push(Line::from("")); // spacer
+
+        summary_lines.push(Line::from(Span::styled("Files Changed", section_style)));
+        if let Some(wt) = selected {
+            if wt.file_stats.is_empty() {
+                summary_lines.push(Line::from(Span::styled("   No uncommitted changes", Style::default().fg(DIM_TEXT))));
+            } else {
+                for fs in wt.file_stats.iter().take(10) {
+                    summary_lines.push(Line::from(vec![
+                        Span::styled("   ", Style::default()),
+                        Span::styled(format!("+{:<3}", fs.adds), Style::default().fg(SUCCESS_COLOR)),
+                        Span::styled(format!("-{:<3}", fs.deletes), Style::default().fg(ERROR_COLOR)),
+                        Span::styled(format!(" {}", fs.path), Style::default().fg(Color::Rgb(180, 180, 190))),
+                    ]));
+                }
+            }
+        } else {
+            summary_lines.push(Line::from(Span::styled("   No selection", Style::default().fg(DIM_TEXT))));
+        }
+
+        let summary = Paragraph::new(summary_lines)
             .block(
                 Block::default()
-                    .title("Files Changed")
+                    .title(Span::styled(
+                        " Current Session ",
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ))
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded),
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(LIGHT_BORDER))
+                    .style(Style::default().bg(SURFACE_BG)),
             )
             .wrap(Wrap { trim: false });
-        f.render_widget(files, left_mid[1]);
+        f.render_widget(summary, left_sections[0]);
 
-        let mut activity_lines = vec![];
+        // Activity stream uses the full right column height
+        let mut activity_lines: Vec<Line> = vec![];
         if let Some(wt) = selected {
-            let status = if wt.activity_active { "● Active" } else { "● Idle" };
-            let color = if wt.activity_active { Color::Green } else { Color::Red };
-            activity_lines.push(status.to_string());
-            if let Some(p) = &wt.activity_log {
-                activity_lines.push(format!("Log: {}", util::display_path(p)));
-            }
-            if wt.activity_recent.is_empty() {
-                activity_lines.push("No recent output".to_string());
+            let (status_label, status_fg, status_bg) = if wt.activity_active {
+                ("Active", STATUS_ACTIVE_FG, STATUS_ACTIVE_BG)
             } else {
-                activity_lines.extend(wt.activity_recent.iter().cloned());
+                ("Idle", STATUS_IDLE_FG, STATUS_IDLE_BG)
+            };
+            activity_lines.push(Line::from(vec![
+                Span::styled("Status  ", label_style),
+                Span::styled(
+                    format!(" {} ", status_label),
+                    Style::default()
+                        .fg(status_fg)
+                        .bg(status_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            if let Some(agent) = wt.agents.first() {
+                activity_lines.push(Line::from(vec![
+                    Span::styled("Agent   ", label_style),
+                    Span::styled(agent.to_string(), value_style),
+                ]));
             }
-            let activity = Paragraph::new(activity_lines.join("\n"))
-                .style(Style::default().fg(color))
+            if let Some(p) = &wt.activity_log {
+                activity_lines.push(Line::from(vec![
+                    Span::styled("Log     ", label_style),
+                    Span::styled(util::display_path(p), Style::default().fg(DIM_TEXT)),
+                ]));
+            }
+            activity_lines.push(Line::from("")); // spacer
+            activity_lines.push(Line::from(Span::styled("Recent Output", section_style)));
+            activity_lines.push(Line::from(Span::styled("─".repeat(30), Style::default().fg(LIGHT_BORDER))));
+            if wt.activity_recent.is_empty() {
+                activity_lines.push(Line::from(Span::styled("No recent output", Style::default().fg(DIM_TEXT))));
+            } else {
+                for line in &wt.activity_recent {
+                    let lower = line.to_lowercase();
+                    let line_style = if lower.contains("error") || lower.contains("fail") {
+                        Style::default().fg(ERROR_COLOR)
+                    } else if lower.contains("success") || lower.contains("done") || lower.contains("complete") {
+                        Style::default().fg(SUCCESS_COLOR)
+                    } else if lower.contains("warn") {
+                        Style::default().fg(WARNING_COLOR)
+                    } else {
+                        Style::default().fg(Color::Rgb(170, 175, 185))
+                    };
+                    activity_lines.push(Line::from(vec![Span::styled(line.clone(), line_style)]));
+                }
+            }
+            let activity = Paragraph::new(activity_lines)
                 .block(
                     Block::default()
-                        .title("Agent Activity")
+                        .title(Span::styled(
+                            " Agent Activity ",
+                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        ))
                         .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded),
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(LIGHT_BORDER))
+                        .style(Style::default().bg(SURFACE_BG)),
                 )
-                .wrap(Wrap { trim: false });
-            f.render_widget(activity, mid[1]);
+                .wrap(Wrap { trim: true });
+            f.render_widget(activity, columns[1]);
         } else {
-            let activity = Paragraph::new("No selection")
+            let activity = Paragraph::new(Span::styled("No selection", Style::default().fg(DIM_TEXT)))
                 .block(
                     Block::default()
-                        .title("Agent Activity")
+                        .title(Span::styled(
+                            " Agent Activity ",
+                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        ))
                         .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded),
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(LIGHT_BORDER))
+                        .style(Style::default().bg(SURFACE_BG)),
                 )
                 .wrap(Wrap { trim: false });
-            f.render_widget(activity, mid[1]);
+            f.render_widget(activity, columns[1]);
         }
 
         let rows: Vec<Row> = self
@@ -1277,96 +1467,207 @@ impl App {
             .iter()
             .enumerate()
             .map(|(idx, wt)| {
-                let changes = if wt.adds == 0 && wt.deletes == 0 {
-                    "-".to_string()
+                let (status_label, status_fg, status_bg) = if wt.activity_active {
+                    ("Active", STATUS_ACTIVE_FG, STATUS_ACTIVE_BG)
                 } else {
-                    format!("+{} / -{}", wt.adds, wt.deletes)
+                    ("Idle", STATUS_IDLE_FG, STATUS_IDLE_BG)
                 };
-                let status_dot = if wt.activity_active { "●" } else { "●" };
-                let status_color = if wt.activity_active { Color::Green } else { Color::Red };
-                let style = if idx == self.selected_worktree {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                let zebra = if idx % 2 == 0 {
+                    Some(ZEBRA_BG)
                 } else {
+                    None
+                };
+                let mut style = if idx == self.selected_worktree {
                     Style::default()
+                        .bg(ACCENT_HIGHLIGHT_BG)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Rgb(200, 205, 215))
                 };
+                if idx != self.selected_worktree {
+                    if let Some(bg) = zebra {
+                        style = style.bg(bg);
+                    }
+                }
+
+                // Truncate name for cleaner look
+                let name_display = if wt.name.len() > 20 {
+                    format!("{}…", &wt.name[..19])
+                } else {
+                    wt.name.clone()
+                };
+
                 Row::new(vec![
-                    Span::styled(status_dot, Style::default().fg(status_color)).to_string(),
-                    wt.name.clone(),
-                    wt.repo.clone(),
-                    wt.branch.clone(),
-                    changes,
-                    wt.display_agent(),
-                    wt.last_commit.clone(),
+                    Cell::from(name_display),
+                    Cell::from(wt.repo.clone()),
+                    Cell::from(wt.branch.clone()),
+                    Cell::from(Line::from(vec![
+                        Span::styled(format!("+{}", wt.adds), Style::default().fg(SUCCESS_COLOR)),
+                        Span::styled(" ", Style::default().fg(DIM_TEXT)),
+                        Span::styled(format!("-{}", wt.deletes), Style::default().fg(ERROR_COLOR)),
+                    ])),
+                    Cell::from(wt.display_agent()),
+                    Cell::from(Span::styled(
+                        format!(" {} ", status_label),
+                        Style::default()
+                            .fg(status_fg)
+                            .bg(status_bg),
+                    )),
+                    Cell::from(wt.last_commit.clone()),
                 ])
                 .style(style)
             })
             .collect();
 
         let widths = [
-            Constraint::Length(3),
-            Constraint::Percentage(23),
-            Constraint::Percentage(22),
-            Constraint::Percentage(15),
-            Constraint::Percentage(12),
+            Constraint::Percentage(16),
+            Constraint::Percentage(18),
+            Constraint::Percentage(16),
             Constraint::Percentage(10),
-            Constraint::Percentage(15),
+            Constraint::Percentage(10),
+            Constraint::Percentage(10),
+            Constraint::Percentage(20),
         ];
+
+        let header = Row::new(vec![
+            Cell::from(Span::styled("Name", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Repo", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Branch", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Changes", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Agent", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Status", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Last Commit", Style::default().fg(DIM_TEXT))),
+        ])
+        .style(Style::default().bg(HEADER_BG))
+        .height(1);
+
         let table = Table::new(rows, widths)
-            .header(
-                Row::new(vec![" ", "Name", "Repo", "Branch", "Changes", "Agent", "Last Commit"])
-                    .style(Style::default().fg(Color::Gray)),
-            )
-            .column_spacing(2)
+            .header(header)
+            .column_spacing(1)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .title("Worktrees"),
+                    .border_style(Style::default().fg(LIGHT_BORDER))
+                    .title(Span::styled(
+                        " Worktrees ",
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ))
+                    .style(Style::default().bg(SURFACE_BG)),
             );
-        f.render_widget(table, layout[1]);
+        f.render_widget(table, left_sections[1]);
+
+        if self.actions_bar {
+            let actions_text = Paragraph::new(Line::from(vec![
+                Span::styled("Enter", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" focus/open  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("x", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" delete  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("Ctrl+R", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" refresh  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("d", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" details", Style::default().fg(DIM_TEXT)),
+            ]))
+            .alignment(Alignment::Center)
+            .style(Style::default().bg(HEADER_BG));
+            f.render_widget(actions_text, main_sections[1]);
+        }
     }
 
     fn draw_sidebar(&self, f: &mut Frame, area: Rect) {
         if !self.show_details {
-            let text = Paragraph::new("Press d to toggle details").wrap(Wrap { trim: true }).block(
+            let text = Paragraph::new(Line::from(vec![
+                Span::styled("Press ", Style::default().fg(DIM_TEXT)),
+                Span::styled("d", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" to toggle details", Style::default().fg(DIM_TEXT)),
+            ]))
+            .wrap(Wrap { trim: true })
+            .alignment(Alignment::Center)
+            .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Sidebar"),
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(LIGHT_BORDER))
+                    .style(Style::default().bg(SURFACE_BG))
+                    .title(Span::styled(
+                        " Details ",
+                        Style::default().fg(DIM_TEXT),
+                    )),
             );
             f.render_widget(text, area);
             return;
         }
         if let Some(wt) = self.worktrees.get(self.selected_worktree) {
             let mut lines: Vec<Line> = Vec::new();
+            let label_style = Style::default().fg(DIM_TEXT);
+            let value_style = Style::default().fg(Color::White);
+
             lines.push(Line::from(vec![Span::styled(
                 wt.name.clone(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(ACCENT)
+                    .add_modifier(Modifier::BOLD),
             )]));
-            lines.push(Line::from(format!("Path: {}", util::display_path(&wt.path))));
-            lines.push(Line::from(format!("Repo: {}", wt.repo)));
-            lines.push(Line::from(format!("Branch: {}", wt.branch)));
+            lines.push(Line::from(Span::styled("─".repeat(25), Style::default().fg(LIGHT_BORDER))));
+            lines.push(Line::from(vec![
+                Span::styled("Path    ", label_style),
+                Span::styled(util::display_path(&wt.path), value_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("Repo    ", label_style),
+                Span::styled(wt.repo.clone(), value_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("Branch  ", label_style),
+                Span::styled(wt.branch.clone(), value_style),
+            ]));
             if wt.has_meta {
-                lines.push(Line::from(format!(
-                    "Preset: {}",
-                    if wt.preset_name.is_empty() { "-" } else { &wt.preset_name }
-                )));
+                lines.push(Line::from(vec![
+                    Span::styled("Preset  ", label_style),
+                    Span::styled(
+                        if wt.preset_name.is_empty() { "—" } else { &wt.preset_name },
+                        value_style,
+                    ),
+                ]));
             }
             if !wt.agents.is_empty() {
-                lines.push(Line::from(format!("Agents: {}", wt.agents.join(", "))));
+                lines.push(Line::from(vec![
+                    Span::styled("Agents  ", label_style),
+                    Span::styled(wt.agents.join(", "), value_style),
+                ]));
             }
             if let Some(created) = wt.created_at {
-                lines.push(Line::from(format!("Created: {}", created.format("%Y-%m-%d %H:%M"))));
+                lines.push(Line::from(vec![
+                    Span::styled("Created ", label_style),
+                    Span::styled(created.format("%Y-%m-%d %H:%M").to_string(), value_style),
+                ]));
             }
-            lines.push(Line::from(format!("Last commit: {}", wt.last_commit)));
-            lines.push(Line::from(format!("Adds/Deletes: +{} / -{}", wt.adds, wt.deletes)));
+            lines.push(Line::from(vec![
+                Span::styled("Commit  ", label_style),
+                Span::styled(wt.last_commit.clone(), value_style),
+            ]));
+
             if !wt.prompt.is_empty() {
-                lines.push(Line::from("Prompt:"));
-                lines.push(Line::from(wt.prompt.clone()));
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Prompt",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )));
+                lines.push(Line::from(Span::styled(wt.prompt.clone(), Style::default().fg(Color::Rgb(180, 180, 190)))));
             }
             if !wt.file_stats.is_empty() {
-                lines.push(Line::from("Files changed:"));
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Files Changed",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )));
                 for fs in wt.file_stats.iter().take(8) {
-                    lines.push(Line::from(format!("+{} -{} {}", fs.adds, fs.deletes, fs.path)));
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("+{:<3}", fs.adds), Style::default().fg(SUCCESS_COLOR)),
+                        Span::styled(format!("-{:<3}", fs.deletes), Style::default().fg(ERROR_COLOR)),
+                        Span::styled(format!(" {}", fs.path), Style::default().fg(Color::Rgb(180, 180, 190))),
+                    ]));
                 }
             }
             let text = Paragraph::new(lines)
@@ -1374,7 +1675,12 @@ impl App {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Details"),
+                        .border_style(Style::default().fg(LIGHT_BORDER))
+                        .style(Style::default().bg(SURFACE_BG))
+                        .title(Span::styled(
+                            " Details ",
+                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        )),
                 )
                 .wrap(Wrap { trim: false });
             f.render_widget(text, area);
@@ -1382,10 +1688,21 @@ impl App {
     }
 
     fn draw_launch(&self, f: &mut Frame, area: Rect) {
+        // Create a centered form layout
+        let outer = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(15),
+                Constraint::Percentage(70),
+                Constraint::Percentage(15),
+            ])
+            .split(area);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
+                    Constraint::Length(1), // spacing
                     Constraint::Length(3),
                     Constraint::Length(3),
                     Constraint::Length(7),
@@ -1395,194 +1712,490 @@ impl App {
                 ]
                 .as_ref(),
             )
-            .split(area);
+            .split(outer[1]);
 
-        let repo = Paragraph::new(self.launch_form.repo.as_str())
-            .block(self.input_block("Repository", self.launch_form.focused == LaunchField::Repo, "owner/repo"))
-            .wrap(Wrap { trim: true });
-        f.render_widget(repo, chunks[0]);
+        // Form title
+        let title = Paragraph::new(Span::styled(
+            "Launch New Session",
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center);
+        f.render_widget(title, chunks[0]);
 
-        let name = Paragraph::new(self.launch_form.name.as_str())
-            .block(self.input_block("Branch prefix", self.launch_form.focused == LaunchField::Name, "feature-name"))
-            .wrap(Wrap { trim: true });
-        f.render_widget(name, chunks[1]);
+        let repo = Paragraph::new(if self.launch_form.repo.is_empty() {
+            Span::styled("owner/repo", Style::default().fg(DIM_TEXT))
+        } else {
+            Span::styled(self.launch_form.repo.as_str(), Style::default().fg(Color::White))
+        })
+        .block(self.input_block(
+            "Repository",
+            self.launch_form.focused == LaunchField::Repo,
+            "",
+        ))
+        .wrap(Wrap { trim: true });
+        f.render_widget(repo, chunks[1]);
 
-        let prompt = Paragraph::new(self.launch_form.prompt.as_str())
-            .block(self.input_block("Prompt", self.launch_form.focused == LaunchField::Prompt, "What should the agent do?"))
-            .wrap(Wrap { trim: true });
-        f.render_widget(prompt, chunks[2]);
+        let name = Paragraph::new(if self.launch_form.name.is_empty() {
+            Span::styled("feature-name", Style::default().fg(DIM_TEXT))
+        } else {
+            Span::styled(self.launch_form.name.as_str(), Style::default().fg(Color::White))
+        })
+        .block(self.input_block(
+            "Branch prefix",
+            self.launch_form.focused == LaunchField::Name,
+            "",
+        ))
+        .wrap(Wrap { trim: true });
+        f.render_widget(name, chunks[2]);
+
+        let prompt = Paragraph::new(if self.launch_form.prompt.is_empty() {
+            Span::styled("What should the agent do?", Style::default().fg(DIM_TEXT))
+        } else {
+            Span::styled(self.launch_form.prompt.as_str(), Style::default().fg(Color::White))
+        })
+        .block(self.input_block(
+            "Prompt",
+            self.launch_form.focused == LaunchField::Prompt,
+            "",
+        ))
+        .wrap(Wrap { trim: true });
+        f.render_widget(prompt, chunks[3]);
 
         let preset = {
             let text = if self.launch_form.preset_names.is_empty() {
-                "default".to_string()
+                Line::from(Span::styled("default", Style::default().fg(Color::White)))
             } else {
                 let count = self.launch_form.preset_names.len();
-                format!(
-                    "< {} >   ({}/{})",
-                    self.launch_form.preset(),
-                    self.launch_form.preset_idx + 1,
-                    count
-                )
+                Line::from(vec![
+                    Span::styled("< ", Style::default().fg(ACCENT_DIM)),
+                    Span::styled(self.launch_form.preset(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled(" >", Style::default().fg(ACCENT_DIM)),
+                    Span::styled(format!("   {}/{}", self.launch_form.preset_idx + 1, count), Style::default().fg(DIM_TEXT)),
+                ])
             };
             Paragraph::new(text)
-                .block(self.input_block("Preset (←/→)", self.launch_form.focused == LaunchField::Preset, ""))
+                .block(self.input_block(
+                    "Preset",
+                    self.launch_form.focused == LaunchField::Preset,
+                    "",
+                ))
                 .wrap(Wrap { trim: true })
         };
-        f.render_widget(preset, chunks[3]);
+        f.render_widget(preset, chunks[4]);
 
+        let btn_focused = self.launch_form.focused == LaunchField::Launch;
         let btn_block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(if self.launch_form.focused == LaunchField::Launch {
-                Style::default().fg(Color::Cyan)
+            .border_style(if btn_focused {
+                Style::default().fg(ACCENT)
             } else {
-                Style::default()
+                Style::default().fg(LIGHT_BORDER)
             })
-            .title("Launch (Enter)");
-        let btn = Paragraph::new("Launch sessions").block(btn_block).alignment(Alignment::Center);
-        f.render_widget(btn, chunks[4]);
+            .style(Style::default().bg(if btn_focused { ACCENT_HIGHLIGHT_BG } else { SURFACE_BG }));
+        let btn = Paragraph::new(Span::styled(
+            "Launch Session",
+            Style::default()
+                .fg(if btn_focused { ACCENT } else { Color::White })
+                .add_modifier(if btn_focused { Modifier::BOLD } else { Modifier::empty() }),
+        ))
+        .block(btn_block)
+        .alignment(Alignment::Center);
+        f.render_widget(btn, chunks[5]);
 
-        let help = Paragraph::new("Tab to move • Ctrl+Enter or Launch to start • Prompt accepts newlines")
-            .style(Style::default().fg(Color::Gray));
-        f.render_widget(help, chunks[5]);
+        let help = Paragraph::new(Line::from(vec![
+            Span::styled("Tab", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" move  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("←/→", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" preset  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("Ctrl+Enter", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" launch", Style::default().fg(DIM_TEXT)),
+        ]))
+        .alignment(Alignment::Center);
+        f.render_widget(help, chunks[6]);
     }
 
-    fn input_block(&self, label: &str, focused: bool, hint: &str) -> Block<'static> {
-        let title = if hint.is_empty() {
-            label.to_string()
-        } else {
-            format!("{} — {}", label, hint)
-        };
+    fn input_block(&self, label: &str, focused: bool, _hint: &str) -> Block<'static> {
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(if focused { Style::default().fg(Color::Cyan) } else { Style::default() })
-            .title(title)
+            .border_style(if focused {
+                Style::default().fg(ACCENT)
+            } else {
+                Style::default().fg(LIGHT_BORDER)
+            })
+            .style(Style::default().bg(if focused { ACCENT_HIGHLIGHT_BG } else { SURFACE_BG }))
+            .title(Span::styled(
+                format!(" {} ", label),
+                Style::default().fg(if focused { ACCENT } else { DIM_TEXT }),
+            ))
     }
 
     fn draw_settings(&self, f: &mut Frame, area: Rect) {
-        let items = vec![
+        // Center the settings panel
+        let outer = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(20),
+                Constraint::Percentage(60),
+                Constraint::Percentage(20),
+            ])
+            .split(area);
+
+        let items: Vec<(String, String, bool)> = vec![
             (
-                "Terminal Type",
-                format!("{:?}", self.settings_form.app_settings.terminal.r#type),
+                "Terminal Type".to_string(),
+                format!("< {:?} >", self.settings_form.app_settings.terminal.r#type),
                 self.settings_form.focused == SettingsField::TerminalType,
             ),
             (
-                "Maximize on Launch",
-                self.settings_form.app_settings.terminal.maximize_on_launch.to_string(),
+                "Maximize on Launch".to_string(),
+                if self.settings_form.app_settings.terminal.maximize_on_launch {
+                    "Enabled".to_string()
+                } else {
+                    "Disabled".to_string()
+                },
                 self.settings_form.focused == SettingsField::Maximize,
             ),
             (
-                "Theme",
-                self.settings_form.app_settings.ui.theme.clone(),
+                "Theme".to_string(),
+                format!("< {} >", self.settings_form.app_settings.ui.theme),
                 self.settings_form.focused == SettingsField::Theme,
             ),
             (
-                "Default Preset",
-                self.settings_form.app_settings.session.default_preset.clone(),
+                "Default Preset".to_string(),
+                format!(
+                    "< {} >",
+                    self.settings_form.app_settings.session.default_preset
+                ),
                 self.settings_form.focused == SettingsField::DefaultPreset,
             ),
             (
-                "Auto Clean Worktrees",
-                self.settings_form.app_settings.session.auto_clean_worktrees.to_string(),
+                "Auto Clean Worktrees".to_string(),
+                if self.settings_form.app_settings.session.auto_clean_worktrees {
+                    "Enabled".to_string()
+                } else {
+                    "Disabled".to_string()
+                },
                 self.settings_form.focused == SettingsField::AutoClean,
             ),
             (
-                "Retention Days",
-                self.settings_form.app_settings.session.worktree_retention_days.to_string(),
+                "Retention Days".to_string(),
+                format!(
+                    "< {} days >",
+                    self.settings_form.app_settings.session.worktree_retention_days
+                ),
                 self.settings_form.focused == SettingsField::RetentionDays,
             ),
         ];
 
         let rows: Vec<Row> = items
             .into_iter()
-            .map(|(label, value, focused)| {
-                let style = if focused {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            .enumerate()
+            .map(|(idx, (label, value, focused))| {
+                let bg = if focused {
+                    ACCENT_HIGHLIGHT_BG
+                } else if idx % 2 == 0 {
+                    ZEBRA_BG
                 } else {
-                    Style::default()
+                    SURFACE_BG
                 };
-                Row::new(vec![label.to_string(), value]).style(style)
+                let style = if focused {
+                    Style::default()
+                        .fg(ACCENT)
+                        .bg(bg)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Rgb(200, 205, 215)).bg(bg)
+                };
+                Row::new(vec![
+                    Cell::from(Span::styled(label.to_string(), if focused {
+                        Style::default().fg(ACCENT)
+                    } else {
+                        Style::default().fg(DIM_TEXT)
+                    })),
+                    Cell::from(Span::styled(value, if focused {
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::Rgb(180, 180, 190))
+                    })),
+                ])
+                .style(style)
             })
             .collect();
+
+        let header = Row::new(vec![
+            Cell::from(Span::styled("Setting", Style::default().fg(DIM_TEXT))),
+            Cell::from(Span::styled("Value", Style::default().fg(DIM_TEXT))),
+        ])
+        .style(Style::default().bg(HEADER_BG))
+        .height(1);
 
         let table = Table::new(
             rows,
             [Constraint::Percentage(50), Constraint::Percentage(50)],
         )
-        .header(Row::new(vec!["Setting", "Value"]).style(Style::default().fg(Color::Gray)))
+        .header(header)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title("Settings (Enter to save, ←/→ to toggle)"),
+                .border_style(Style::default().fg(LIGHT_BORDER))
+                .style(Style::default().bg(SURFACE_BG))
+                .title(Span::styled(
+                    " Settings ",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )),
         );
-        f.render_widget(table, area);
+        f.render_widget(table, outer[1]);
+
+        // Help text at bottom
+        let help_area = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(outer[1]);
+
+        let help = Paragraph::new(Line::from(vec![
+            Span::styled("↑/↓", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" select  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("←/→", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" change  ", Style::default().fg(DIM_TEXT)),
+            Span::styled("Enter", Style::default().fg(ACCENT_DIM).add_modifier(Modifier::BOLD)),
+            Span::styled(" save", Style::default().fg(DIM_TEXT)),
+        ]))
+        .alignment(Alignment::Center);
+        f.render_widget(help, help_area[1]);
     }
 
     fn draw_presets(&self, f: &mut Frame, area: Rect) {
+        // Center the presets panel
+        let outer = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Percentage(10),
+            ])
+            .split(area);
+
         if let Some(cfg) = &self.preset_config {
             let mut items = Vec::new();
             for (name, preset) in cfg.presets.iter() {
-                let mut lines = vec![format!("Preset: {}", name)];
+                let mut lines: Vec<Line> = Vec::new();
+                lines.push(Line::from(Span::styled(
+                    name.clone(),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "─".repeat(40),
+                    Style::default().fg(LIGHT_BORDER),
+                )));
                 for (idx, wt) in preset.iter().enumerate() {
-                    lines.push(format!("  {}. Agent: {}", idx + 1, wt.agent));
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {}. ", idx + 1), Style::default().fg(DIM_TEXT)),
+                        Span::styled("Agent: ", Style::default().fg(DIM_TEXT)),
+                        Span::styled(wt.agent.clone(), Style::default().fg(Color::Rgb(180, 180, 190))),
+                    ]));
                     for cmd in &wt.commands {
                         let title = cmd.display_title();
-                        lines.push(format!("     - {}", title));
+                        lines.push(Line::from(vec![
+                            Span::styled("       -> ", Style::default().fg(DIM_TEXT)),
+                            Span::styled(title, Style::default().fg(Color::Rgb(150, 150, 160))),
+                        ]));
                     }
                 }
-                items.push(ListItem::new(lines.join("\n")));
+                lines.push(Line::from("")); // spacer between presets
+                items.push(ListItem::new(lines));
             }
             let list = List::new(items)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .title("Presets"),
+                        .border_style(Style::default().fg(LIGHT_BORDER))
+                        .style(Style::default().bg(SURFACE_BG))
+                        .title(Span::styled(
+                            " Presets ",
+                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                        )),
                 )
-                .highlight_style(Style::default().fg(Color::Cyan));
-            f.render_widget(list, area);
+                .highlight_style(Style::default().fg(ACCENT));
+            f.render_widget(list, outer[1]);
         } else {
-            let text = Paragraph::new("No presets found. Create settings.yaml in your data dir.")
-                .style(Style::default().fg(Color::Gray))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .title("Presets"),
-                );
-            f.render_widget(text, area);
+            let empty_msg = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "No presets configured",
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Create a settings.yaml file in your data directory",
+                    Style::default().fg(DIM_TEXT),
+                )),
+                Line::from(Span::styled(
+                    "to define custom agent presets.",
+                    Style::default().fg(DIM_TEXT),
+                )),
+            ])
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(LIGHT_BORDER))
+                    .style(Style::default().bg(SURFACE_BG))
+                    .title(Span::styled(
+                        " Presets ",
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    )),
+            );
+            f.render_widget(empty_msg, outer[1]);
         }
     }
 
     fn draw_confirm_dialog(&self, f: &mut Frame) {
-        let area = centered_rect(50, 30, f.size());
+        let area = centered_rect(45, 25, f.size());
         let block = Block::default()
-            .title("Delete worktree?")
+            .title(Span::styled(
+                " Delete Worktree ",
+                Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD),
+            ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Red));
-        let text = Paragraph::new("Press Y to confirm, N to cancel").block(block).alignment(Alignment::Center);
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(ERROR_COLOR))
+            .style(Style::default().bg(SURFACE_BG));
+
+        let wt_name = self
+            .worktrees
+            .get(self.selected_worktree)
+            .map(|w| w.name.clone())
+            .unwrap_or_default();
+
+        let text = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Are you sure you want to delete this worktree?",
+                Style::default().fg(Color::White),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                wt_name,
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Y", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+                Span::styled(" confirm  ", Style::default().fg(DIM_TEXT)),
+                Span::styled("N", Style::default().fg(SUCCESS_COLOR).add_modifier(Modifier::BOLD)),
+                Span::styled(" cancel", Style::default().fg(DIM_TEXT)),
+            ]),
+        ])
+        .block(block)
+        .alignment(Alignment::Center);
         f.render_widget(Clear, area);
         f.render_widget(text, area);
     }
 
     fn draw_help_overlay(&self, f: &mut Frame) {
-        let area = centered_rect(70, 60, f.size());
-        let bindings = vec![
-            "Global: Tab cycle views • Ctrl+C quit • ? toggle help",
-            "Worktrees: ↑/↓/g/G navigate • Enter focus • o open • d details • x delete • Ctrl+R refresh • Ctrl+P toggle sidebar",
-            "Launch: Tab/Shift+Tab move • Ctrl+Enter launch • arrows change preset",
-            "Settings: ↑/↓ select • ←/→ toggle values • Enter save",
-        ];
-        let content = bindings.join("\n");
+        let area = centered_rect(65, 55, f.size());
         let block = Block::default()
-            .title("Help & Shortcuts")
+            .title(Span::styled(
+                " Keyboard Shortcuts ",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Cyan));
+            .border_style(Style::default().fg(ACCENT))
+            .style(Style::default().bg(SURFACE_BG));
+
+        let content = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Global",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(vec![
+                Span::styled("  Tab      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Cycle between views", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Ctrl+C   ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Quit application", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  ?        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Toggle this help", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Worktrees View",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(vec![
+                Span::styled("  ↑/↓ j/k  ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Navigate worktrees", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  g/G      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Jump to first/last", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Enter    ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Focus or reopen session", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  o        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Open in terminal", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  d        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Toggle details sidebar", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  e        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Expand/collapse prompt", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  x        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Delete worktree", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Ctrl+R   ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Refresh list", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Launch & Settings",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled("─".repeat(50), Style::default().fg(LIGHT_BORDER))),
+            Line::from(vec![
+                Span::styled("  Tab      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Move between fields", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  ←/→      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Change preset/value", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Enter    ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled("Submit/Save", Style::default().fg(DIM_TEXT)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Press ", Style::default().fg(DIM_TEXT)),
+                Span::styled("Esc", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" or ", Style::default().fg(DIM_TEXT)),
+                Span::styled("?", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" to close", Style::default().fg(DIM_TEXT)),
+            ]),
+        ];
+
         let para = Paragraph::new(content)
-            .style(Style::default().fg(Color::White))
             .block(block)
             .wrap(Wrap { trim: true });
         f.render_widget(Clear, area);

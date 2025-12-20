@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -83,7 +83,14 @@ pub fn create_worktree(
 
     run_git(
         repo_root,
-        &["worktree", "add", "-b", branch_name, worktree_path.to_str().unwrap(), base_branch],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            branch_name,
+            worktree_path.to_str().unwrap(),
+            base_branch,
+        ],
     )?;
     Ok(())
 }
@@ -135,19 +142,13 @@ pub fn last_commit_time(path: &Path) -> Result<String> {
 }
 
 pub fn remote_url(path: &Path) -> Result<String> {
-    run_git(path, &["remote", "get-url", "origin"])
-        .map(|u| u.trim_end_matches(".git").to_string())
+    run_git(path, &["remote", "get-url", "origin"]).map(|u| u.trim_end_matches(".git").to_string())
 }
 
 pub fn recent_commits(path: &Path, n: usize) -> Result<Vec<String>> {
     let out = run_git(
         path,
-        &[
-            "log",
-            "-n",
-            &n.to_string(),
-            "--pretty=format:%h %cr %s",
-        ],
+        &["log", "-n", &n.to_string(), "--pretty=format:%h %cr %s"],
     )?;
     let lines = out
         .lines()

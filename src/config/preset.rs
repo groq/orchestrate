@@ -42,11 +42,7 @@ pub struct Worktree {
 
 impl Worktree {
     pub fn get_n(&self) -> i64 {
-        if self.n <= 0 {
-            1
-        } else {
-            self.n
-        }
+        if self.n <= 0 { 1 } else { self.n }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -91,7 +87,7 @@ pub fn load(dir: &Path) -> LoadResult {
             return LoadResult {
                 config: None,
                 path: None,
-            }
+            };
         }
     };
 
@@ -101,7 +97,7 @@ pub fn load(dir: &Path) -> LoadResult {
             return LoadResult {
                 config: None,
                 path: None,
-            }
+            };
         }
     };
 

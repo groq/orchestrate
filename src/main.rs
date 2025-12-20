@@ -12,7 +12,10 @@ use clap::Parser;
 use std::fs;
 
 #[derive(Parser, Debug)]
-#[command(name = "orchestrate", about = "Run AI coding agents in isolated git worktrees")]
+#[command(
+    name = "orchestrate",
+    about = "Run AI coding agents in isolated git worktrees"
+)]
 struct Cli {
     /// Launch the interactive TUI
     #[arg(long)]
@@ -73,7 +76,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if preset_config.is_none() {
-        eprintln!("Error: settings.yaml not found. Please create one in {}", util::display_path(data_dir.join("settings.yaml")));
+        eprintln!(
+            "Error: settings.yaml not found. Please create one in {}",
+            util::display_path(data_dir.join("settings.yaml"))
+        );
         std::process::exit(1);
     }
 
@@ -98,7 +104,10 @@ fn main() -> anyhow::Result<()> {
         .as_ref()
         .and_then(|cfg| preset::get_preset(cfg, &preset_name))
         .unwrap_or_else(|| {
-            eprintln!("Warning: preset '{}' not found, using single droid agent", preset_name);
+            eprintln!(
+                "Warning: preset '{}' not found, using single droid agent",
+                preset_name
+            );
             vec![preset::Worktree {
                 agent: "droid".to_string(),
                 n: 1,
