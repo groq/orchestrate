@@ -38,9 +38,9 @@ presets:
   fullstack:
     - agent: claude
       commands:
-        - command: "npm run dev"
+        - command: "./bin/go run ./cmd/server"
           title: "Dev Server"
-        - command: "npm run test:watch"
+        - command: "./bin/go test ./..."
           title: "Tests"
         - command: ""
           title: "Shell"
@@ -97,7 +97,7 @@ go install github.com/groq/orchestrate@latest
 | `--name` | **Required.** Branch name prefix for worktrees. Each branch gets a unique hex suffix. |
 | `--prompt` | **Required.** The prompt to pass to each agent. |
 | `--preset` | Use a preset from `settings.yaml`. Defaults to the config's default preset. |
-| `--n` | Multiplier for agent windows. `--n 2` runs each agent twice. |
+| `--n` | Multiplier for agent worktrees. `--n 2` runs each agent twice. |
 
 ---
 
@@ -276,11 +276,18 @@ Inside this directory:
 orchestrate/
 ├── main.go           # CLI entry point
 ├── config/           # YAML configuration loading
-├── git/              # Git worktree operations
+├── git_utils/        # Git worktree operations
 ├── agents/           # Agent parsing and colors
 ├── terminal/         # iTerm2 window management
+├── internal/tui/     # Terminal UI (Bubble Tea)
 └── util/             # Utilities
 ```
+
+---
+
+## 🙏 Acknowledgments
+
+The terminal UI is heavily inspired by and borrows design patterns from [**gh-dash**](https://github.com/dlvhdr/gh-dash) by [@dlvhdr](https://github.com/dlvhdr) — a beautiful GitHub CLI dashboard. Thank you for the excellent reference implementation!
 
 ---
 

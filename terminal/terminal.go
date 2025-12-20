@@ -131,7 +131,7 @@ func BuildCustomCommand(s SessionInfo) string {
 	// Print branch info if in a worktree
 	branchCmd := ""
 	if s.WorktreeBranch != "" {
-		branchCmd = fmt.Sprintf(" && echo '📍 Branch: %s'", s.WorktreeBranch)
+		branchCmd = fmt.Sprintf(" && echo 'Branch: %s'", s.WorktreeBranch)
 	}
 
 	// Build full command - handle empty commands (just open terminal)
@@ -263,8 +263,8 @@ func (m *Manager) LaunchWorktrees(worktrees []WorktreeInfo, prompt string) (int,
 	return m.LaunchSessions(worktrees, prompt)
 }
 
-// WindowCount calculates the number of windows needed for n worktrees.
-func (m *Manager) WindowCount(n int) int {
+// TerminalWindowCount calculates the number of iTerm2 windows needed for n sessions.
+func (m *Manager) TerminalWindowCount(n int) int {
 	if n <= 0 {
 		return 0
 	}

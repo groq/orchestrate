@@ -1,4 +1,4 @@
-package git
+package git_utils
 
 import (
 	"errors"

@@ -440,7 +440,7 @@ func TestSessionInfo_Fields(t *testing.T) {
 	}
 }
 
-func TestManager_WindowCount(t *testing.T) {
+func TestManager_TerminalWindowCount(t *testing.T) {
 	tests := []struct {
 		name         string
 		maxPerWindow int
@@ -459,9 +459,9 @@ func TestManager_WindowCount(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &Manager{MaxPerWindow: tt.maxPerWindow}
-			got := m.WindowCount(tt.n)
+			got := m.TerminalWindowCount(tt.n)
 			if got != tt.want {
-				t.Errorf("WindowCount(%d) = %d, want %d", tt.n, got, tt.want)
+				t.Errorf("TerminalWindowCount(%d) = %d, want %d", tt.n, got, tt.want)
 			}
 		})
 	}

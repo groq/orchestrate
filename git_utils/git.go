@@ -1,5 +1,5 @@
-// Package git provides git-related operations for orchestrate.
-package git
+// Package git_utils provides git-related operations for orchestrate.
+package git_utils
 
 import (
 	"fmt"
@@ -94,6 +94,114 @@ func WorktreeExists(path string) bool {
 	return err == nil
 }
 
+// WorktreeInfo contains information about a git worktree.
+type WorktreeInfo struct {
+	Path       string // Absolute path to the worktree
+	Branch     string // Branch name
+	Head       string // Commit SHA
+	IsBare     bool   // Whether this is the bare worktree
+	IsMain     bool   // Whether this is the main worktree
+	CreatedAt  string // When the worktree was created (if available)
+	LastCommit string // Last commit time
+}
+
+// ListWorktrees returns all worktrees for a repository.
+func ListWorktrees(repoPath string) ([]WorktreeInfo, error) {
+	return ListWorktreesWithCmd(defaultCmd, repoPath)
+}
+
+// ListWorktreesWithCmd lists worktrees using a custom commander.
+func ListWorktreesWithCmd(cmd Commander, repoPath string) ([]WorktreeInfo, error) {
+	// Use porcelain format for easier parsing
+	out, err := cmd.Run(repoPath, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list worktrees: %w", err)
+	}
+
+	var worktrees []WorktreeInfo
+	var current *WorktreeInfo
+
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+				current = nil
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "worktree ") {
+			if current != nil {
+				worktrees = append(worktrees, *current)
+			}
+			current = &WorktreeInfo{
+				Path: strings.TrimPrefix(line, "worktree "),
+			}
+		} else if current != nil {
+			if strings.HasPrefix(line, "HEAD ") {
+				current.Head = strings.TrimPrefix(line, "HEAD ")
+			} else if strings.HasPrefix(line, "branch ") {
+				branch := strings.TrimPrefix(line, "branch ")
+				// Strip refs/heads/ prefix
+				branch = strings.TrimPrefix(branch, "refs/heads/")
+				current.Branch = branch
+			} else if line == "bare" {
+				current.IsBare = true
+			}
+		}
+	}
+
+	// Don't forget the last one
+	if current != nil {
+		worktrees = append(worktrees, *current)
+	}
+
+	// Mark the main worktree (first one or bare)
+	if len(worktrees) > 0 {
+		worktrees[0].IsMain = true
+	}
+
+	// Get last commit time for each worktree
+	for i := range worktrees {
+		if !worktrees[i].IsBare {
+			commitTime, _ := cmd.Run(worktrees[i].Path, "log", "-1", "--format=%cr")
+			worktrees[i].LastCommit = commitTime
+		}
+	}
+
+	return worktrees, nil
+}
+
+// RemoveWorktree removes a worktree by path.
+func RemoveWorktree(repoPath, worktreePath string) error {
+	return RemoveWorktreeWithCmd(defaultCmd, repoPath, worktreePath)
+}
+
+// RemoveWorktreeWithCmd removes a worktree using a custom commander.
+func RemoveWorktreeWithCmd(cmd Commander, repoPath, worktreePath string) error {
+	out, err := cmd.Run(repoPath, "worktree", "remove", worktreePath, "--force")
+	if err != nil {
+		return fmt.Errorf("failed to remove worktree: %v: %s", err, out)
+	}
+	return nil
+}
+
+// PruneWorktrees removes stale worktree references.
+func PruneWorktrees(repoPath string) error {
+	return PruneWorktreesWithCmd(defaultCmd, repoPath)
+}
+
+// PruneWorktreesWithCmd prunes worktrees using a custom commander.
+func PruneWorktreesWithCmd(cmd Commander, repoPath string) error {
+	out, err := cmd.Run(repoPath, "worktree", "prune")
+	if err != nil {
+		return fmt.Errorf("failed to prune worktrees: %v: %s", err, out)
+	}
+	return nil
+}
+
 // EnsureRepo ensures a GitHub repo is cloned and up-to-date with the main branch.
 // repoSpec is in the format "owner/repo" (e.g., "groq/openbench").
 // baseDir is where repos will be stored.
@@ -166,4 +274,29 @@ func FetchAndResetWithCmd(cmd Commander, repoPath string) error {
 	}
 
 	return nil
+}
+
+// GetStatusStats returns the number of added and deleted lines in the worktree.
+func GetStatusStats(path string) (adds, deletes int, err error) {
+	// Use git diff --numstat to get changes compared to HEAD
+	out, err := defaultCmd.Run(path, "diff", "HEAD", "--numstat")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			var a, d int
+			fmt.Sscanf(parts[0], "%d", &a)
+			fmt.Sscanf(parts[1], "%d", &d)
+			adds += a
+			deletes += d
+		}
+	}
+	return adds, deletes, nil
 }

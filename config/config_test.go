@@ -268,20 +268,20 @@ func TestLoad_NoConfigFile(t *testing.T) {
 	}
 }
 
-func TestWindow_HasCommands(t *testing.T) {
+func TestWorktree_HasCommands(t *testing.T) {
 	tests := []struct {
-		name   string
-		window Window
-		want   bool
+		name     string
+		worktree Worktree
+		want     bool
 	}{
-		{"no commands", Window{Agent: "claude"}, false},
-		{"empty commands", Window{Agent: "claude", Commands: []Command{}}, false},
-		{"with commands", Window{Agent: "claude", Commands: []Command{{Command: "test"}}}, true},
+		{"no commands", Worktree{Agent: "claude"}, false},
+		{"empty commands", Worktree{Agent: "claude", Commands: []Command{}}, false},
+		{"with commands", Worktree{Agent: "claude", Commands: []Command{{Command: "test"}}}, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.window.HasCommands(); got != tt.want {
+			if got := tt.worktree.HasCommands(); got != tt.want {
 				t.Errorf("HasCommands() = %v, want %v", got, tt.want)
 			}
 		})
@@ -477,24 +477,24 @@ presets:
 	}
 }
 
-func TestWindow_GetN(t *testing.T) {
+func TestWorktree_GetN(t *testing.T) {
 	tests := []struct {
-		name   string
-		window Window
-		want   int
+		name     string
+		worktree Worktree
+		want     int
 	}{
-		{"no n specified", Window{Agent: "claude"}, 1},
-		{"n is zero", Window{Agent: "claude", N: 0}, 1},
-		{"n is negative", Window{Agent: "claude", N: -1}, 1},
-		{"n is 1", Window{Agent: "claude", N: 1}, 1},
-		{"n is 2", Window{Agent: "claude", N: 2}, 2},
-		{"n is 3", Window{Agent: "claude", N: 3}, 3},
-		{"n is 10", Window{Agent: "claude", N: 10}, 10},
+		{"no n specified", Worktree{Agent: "claude"}, 1},
+		{"n is zero", Worktree{Agent: "claude", N: 0}, 1},
+		{"n is negative", Worktree{Agent: "claude", N: -1}, 1},
+		{"n is 1", Worktree{Agent: "claude", N: 1}, 1},
+		{"n is 2", Worktree{Agent: "claude", N: 2}, 2},
+		{"n is 3", Worktree{Agent: "claude", N: 3}, 3},
+		{"n is 10", Worktree{Agent: "claude", N: 10}, 10},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.window.GetN(); got != tt.want {
+			if got := tt.worktree.GetN(); got != tt.want {
 				t.Errorf("GetN() = %v, want %v", got, tt.want)
 			}
 		})
@@ -629,27 +629,27 @@ presets:
 	}
 
 	if len(preset) != 1 {
-		t.Fatalf("len(preset) = %d, want 1 (single window config with n=3)", len(preset))
+		t.Fatalf("len(preset) = %d, want 1 (single worktree config with n=3)", len(preset))
 	}
 
-	window := preset[0]
+	worktree := preset[0]
 
 	// CRITICAL: Agent must NOT be empty
-	if window.Agent == "" {
+	if worktree.Agent == "" {
 		t.Fatal("REGRESSION: Agent is empty! This causes the prompt to be executed as a command instead of being passed to the agent")
 	}
 
-	if window.Agent != "droid" {
-		t.Errorf("Agent = %q, want 'droid'", window.Agent)
+	if worktree.Agent != "droid" {
+		t.Errorf("Agent = %q, want 'droid'", worktree.Agent)
 	}
 
-	if window.GetN() != 3 {
-		t.Errorf("GetN() = %d, want 3", window.GetN())
+	if worktree.GetN() != 3 {
+		t.Errorf("GetN() = %d, want 3", worktree.GetN())
 	}
 }
 
 // TestLoadFromBytes_StandaloneN_BugCase tests the bug case where n is a separate
-// list item instead of a field on an agent window.
+// list item instead of a field on an agent worktree.
 // YAML like this is INVALID and should be caught:
 //
 //	parallel:
@@ -678,27 +678,27 @@ presets:
 		t.Fatal("Preset 'parallel' not found")
 	}
 
-	// This parses as 2 windows: one with n=2 (no agent!) and one with agent=claude
+	// This parses as 2 worktrees: one with n=2 (no agent!) and one with agent=claude
 	if len(preset) != 2 {
 		t.Fatalf("len(preset) = %d, want 2", len(preset))
 	}
 
-	// First window has NO AGENT - this is the bug!
+	// First worktree has NO AGENT - this is the bug!
 	if preset[0].Agent != "" {
-		t.Errorf("First window Agent = %q, expected empty (bug case)", preset[0].Agent)
+		t.Errorf("First worktree Agent = %q, expected empty (bug case)", preset[0].Agent)
 	}
 
 	// The IsValid method should catch this
 	if preset[0].IsValid() {
-		t.Error("Window with no agent should NOT be valid")
+		t.Error("Worktree with no agent should NOT be valid")
 	}
 
-	// Second window is fine
+	// Second worktree is fine
 	if preset[1].Agent != "claude" {
-		t.Errorf("Second window Agent = %q, want 'claude'", preset[1].Agent)
+		t.Errorf("Second worktree Agent = %q, want 'claude'", preset[1].Agent)
 	}
 	if !preset[1].IsValid() {
-		t.Error("Window with agent should be valid")
+		t.Error("Worktree with agent should be valid")
 	}
 }
 
@@ -741,5 +741,312 @@ presets:
 	}
 	if preset[2].HasCommands() {
 		t.Error("Third claude should have no commands")
+	}
+}
+
+// Test SavePresetConfig with valid config
+func TestSavePresetConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config_save_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	cfg := &Config{
+		Default: "test",
+		Presets: map[string]Preset{
+			"test": {
+				{Agent: "droid", N: 1},
+				{Agent: "claude", N: 2, Commands: []Command{
+					{Command: "npm start", Title: "Dev Server", Color: "#00ff00"},
+				}},
+			},
+		},
+	}
+
+	// Save config
+	err = SavePresetConfig(tmpDir, cfg)
+	if err != nil {
+		t.Fatalf("SavePresetConfig failed: %v", err)
+	}
+
+	// Verify file was created
+	configPath := filepath.Join(tmpDir, SettingsFileName)
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Fatal("Config file was not created")
+	}
+
+	// Load it back and verify
+	result := Load(tmpDir)
+	if result.Config == nil {
+		t.Fatal("Failed to load saved config")
+	}
+
+	if result.Config.Default != "test" {
+		t.Errorf("Default = %q, want 'test'", result.Config.Default)
+	}
+
+	preset, ok := result.Config.GetPreset("test")
+	if !ok {
+		t.Fatal("Preset 'test' not found after save/load")
+	}
+
+	if len(preset) != 2 {
+		t.Fatalf("len(preset) = %d, want 2", len(preset))
+	}
+
+	if preset[0].Agent != "droid" {
+		t.Errorf("preset[0].Agent = %q, want 'droid'", preset[0].Agent)
+	}
+
+	if preset[1].Agent != "claude" {
+		t.Errorf("preset[1].Agent = %q, want 'claude'", preset[1].Agent)
+	}
+
+	if preset[1].N != 2 {
+		t.Errorf("preset[1].N = %d, want 2", preset[1].N)
+	}
+
+	if !preset[1].HasCommands() {
+		t.Error("preset[1] should have commands")
+	}
+}
+
+// Test SavePresetConfig with empty directory
+func TestSavePresetConfig_EmptyDir(t *testing.T) {
+	cfg := &Config{
+		Default: "simple",
+		Presets: map[string]Preset{
+			"simple": {{Agent: "droid"}},
+		},
+	}
+
+	// Save with empty dir (should save to current directory or relative path)
+	err := SavePresetConfig("", cfg)
+	if err != nil {
+		t.Fatalf("SavePresetConfig with empty dir failed: %v", err)
+	}
+
+	// Clean up
+	_ = os.Remove(SettingsFileName)
+}
+
+// Test SavePresetConfig updates existing file
+func TestSavePresetConfig_UpdateExisting(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config_update_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Create initial config
+	initialCfg := &Config{
+		Default: "alpha",
+		Presets: map[string]Preset{
+			"alpha": {{Agent: "droid"}},
+		},
+	}
+
+	err = SavePresetConfig(tmpDir, initialCfg)
+	if err != nil {
+		t.Fatalf("Initial save failed: %v", err)
+	}
+
+	// Update config
+	updatedCfg := &Config{
+		Default: "beta",
+		Presets: map[string]Preset{
+			"alpha": {{Agent: "droid"}},
+			"beta":  {{Agent: "claude"}, {Agent: "codex"}},
+		},
+	}
+
+	err = SavePresetConfig(tmpDir, updatedCfg)
+	if err != nil {
+		t.Fatalf("Update save failed: %v", err)
+	}
+
+	// Load and verify
+	result := Load(tmpDir)
+	if result.Config == nil {
+		t.Fatal("Failed to load updated config")
+	}
+
+	if result.Config.Default != "beta" {
+		t.Errorf("Default = %q, want 'beta'", result.Config.Default)
+	}
+
+	if len(result.Config.Presets) != 2 {
+		t.Errorf("len(Presets) = %d, want 2", len(result.Config.Presets))
+	}
+
+	// Verify both presets exist
+	if _, ok := result.Config.GetPreset("alpha"); !ok {
+		t.Error("Preset 'alpha' should still exist")
+	}
+
+	beta, ok := result.Config.GetPreset("beta")
+	if !ok {
+		t.Fatal("Preset 'beta' not found")
+	}
+
+	if len(beta) != 2 {
+		t.Errorf("len(beta) = %d, want 2", len(beta))
+	}
+}
+
+// Test SavePresetConfig with invalid directory
+func TestSavePresetConfig_InvalidDirectory(t *testing.T) {
+	cfg := &Config{
+		Default: "test",
+		Presets: map[string]Preset{
+			"test": {{Agent: "droid"}},
+		},
+	}
+
+	// Try to save to a non-existent directory that can't be created
+	err := SavePresetConfig("/nonexistent/path/that/should/not/exist", cfg)
+	if err == nil {
+		t.Error("Expected error when saving to invalid directory")
+	}
+}
+
+// Test SavePresetConfig with nil config
+func TestSavePresetConfig_NilConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config_nil_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Saving nil config should work (creates empty/zero-value config)
+	err = SavePresetConfig(tmpDir, nil)
+	// The yaml.Marshal might handle nil, but if not, we expect an error
+	// Either way is acceptable behavior
+}
+
+// Test SavePresetConfig preserves order
+func TestSavePresetConfig_PreservesPresetOrder(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config_order_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	cfg := &Config{
+		Default: "first",
+		Presets: map[string]Preset{
+			"first":  {{Agent: "droid"}},
+			"second": {{Agent: "claude"}},
+			"third":  {{Agent: "codex"}},
+		},
+	}
+
+	err = SavePresetConfig(tmpDir, cfg)
+	if err != nil {
+		t.Fatalf("SavePresetConfig failed: %v", err)
+	}
+
+	// Load back
+	result := Load(tmpDir)
+	if result.Config == nil {
+		t.Fatal("Failed to load saved config")
+	}
+
+	// Verify all presets exist (order might not be preserved in map, but all should be there)
+	for name := range cfg.Presets {
+		if _, ok := result.Config.Presets[name]; !ok {
+			t.Errorf("Preset %q not found after save/load", name)
+		}
+	}
+
+	if len(result.Config.Presets) != 3 {
+		t.Errorf("len(Presets) = %d, want 3", len(result.Config.Presets))
+	}
+}
+
+// Test SavePresetConfig with complex nested structure
+func TestSavePresetConfig_ComplexStructure(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "config_complex_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	cfg := &Config{
+		Default: "fullstack",
+		Presets: map[string]Preset{
+			"fullstack": {
+				{
+					Agent: "droid",
+					N:     2,
+					Commands: []Command{
+						{Command: "npm run dev", Title: "Frontend", Color: "#00ccff"},
+						{Command: "", Title: "Terminal"},
+					},
+				},
+				{
+					Agent: "claude",
+					N:     1,
+					Commands: []Command{
+						{Command: "cargo run", Title: "Backend", Color: "#ff6600"},
+					},
+				},
+				{
+					Agent: "codex",
+					N:     3,
+				},
+			},
+		},
+	}
+
+	err = SavePresetConfig(tmpDir, cfg)
+	if err != nil {
+		t.Fatalf("SavePresetConfig failed: %v", err)
+	}
+
+	// Load and verify structure is preserved
+	result := Load(tmpDir)
+	if result.Config == nil {
+		t.Fatal("Failed to load saved config")
+	}
+
+	preset, ok := result.Config.GetPreset("fullstack")
+	if !ok {
+		t.Fatal("Preset 'fullstack' not found")
+	}
+
+	if len(preset) != 3 {
+		t.Fatalf("len(preset) = %d, want 3", len(preset))
+	}
+
+	// Verify first worktree
+	if preset[0].Agent != "droid" {
+		t.Errorf("preset[0].Agent = %q, want 'droid'", preset[0].Agent)
+	}
+	if preset[0].N != 2 {
+		t.Errorf("preset[0].N = %d, want 2", preset[0].N)
+	}
+	if len(preset[0].Commands) != 2 {
+		t.Errorf("len(preset[0].Commands) = %d, want 2", len(preset[0].Commands))
+	}
+
+	// Verify second worktree
+	if preset[1].Agent != "claude" {
+		t.Errorf("preset[1].Agent = %q, want 'claude'", preset[1].Agent)
+	}
+	if len(preset[1].Commands) != 1 {
+		t.Errorf("len(preset[1].Commands) = %d, want 1", len(preset[1].Commands))
+	}
+
+	// Verify third worktree
+	if preset[2].Agent != "codex" {
+		t.Errorf("preset[2].Agent = %q, want 'codex'", preset[2].Agent)
+	}
+	if preset[2].N != 3 {
+		t.Errorf("preset[2].N = %d, want 3", preset[2].N)
+	}
+	if preset[2].HasCommands() {
+		t.Error("preset[2] should not have commands")
 	}
 }

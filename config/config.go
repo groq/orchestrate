@@ -32,15 +32,15 @@ func (c Command) GetTitle() string {
 	return c.Command
 }
 
-// Window represents a single agent configuration with optional commands.
-type Window struct {
+// Worktree represents a single agent configuration with optional commands.
+type Worktree struct {
 	Agent    string    `yaml:"agent,omitempty"`    // Agent name (e.g., "claude", "codex")
 	N        int       `yaml:"n,omitempty"`        // Multiplier for this agent (default 1)
 	Commands []Command `yaml:"commands,omitempty"` // Commands to run in this agent's worktree
 }
 
-// GetN returns the multiplier for this window (defaults to 1 if not set).
-func (w Window) GetN() int {
+// GetN returns the multiplier for this worktree (defaults to 1 if not set).
+func (w Worktree) GetN() int {
 	if w.N <= 0 {
 		return 1
 	}
@@ -48,18 +48,18 @@ func (w Window) GetN() int {
 }
 
 // HasCommands returns true if this agent has associated commands.
-func (w Window) HasCommands() bool {
+func (w Worktree) HasCommands() bool {
 	return len(w.Commands) > 0
 }
 
-// IsValid returns true if this window has a valid configuration.
-// A valid window must have an agent name.
-func (w Window) IsValid() bool {
+// IsValid returns true if this worktree has a valid configuration.
+// A valid worktree must have an agent name.
+func (w Worktree) IsValid() bool {
 	return w.Agent != ""
 }
 
-// Preset is an ordered list of agent windows.
-type Preset []Window
+// Preset is an ordered list of agent worktrees.
+type Preset []Worktree
 
 // Config represents the settings.orchestrate.yaml configuration file.
 type Config struct {
@@ -98,7 +98,7 @@ func Load(dir string) LoadResult {
 
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		log.Printf("⚠️  Warning: invalid %s: %v", configFile, err)
+		log.Printf("Warning: invalid %s", configFile)
 		return LoadResult{Config: nil, Path: ""}
 	}
 
@@ -132,6 +132,27 @@ func (c *Config) GetDefaultPresetName() string {
 		return ""
 	}
 	return c.Default
+}
+
+// SavePresetConfig saves the preset configuration to settings.yaml in the specified directory.
+// The directory should be the orchestrate data directory.
+func SavePresetConfig(dir string, config *Config) error {
+	configFile := SettingsFileName
+	if dir != "" {
+		configFile = filepath.Join(dir, configFile)
+	}
+
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write with proper permissions (0644 = rw-r--r--)
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // ParseHexColor parses a hex color string (e.g., "#ff8c00") into RGB values.

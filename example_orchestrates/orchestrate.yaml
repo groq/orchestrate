@@ -1,0 +1,29 @@
+# Orchestrate App Settings
+# This file configures the orchestrate application itself
+
+terminal:
+  # Terminal type: "iterm2" or "terminal"
+  # iterm2: Uses iTerm2 (macOS) with split panes and tabs
+  # terminal: Uses the default system terminal (coming soon)
+  type: iterm2
+  
+  # Maximize windows when launching sessions
+  maximize_on_launch: true
+
+ui:
+  # Show the status bar at the bottom of the TUI
+  show_status_bar: true
+  
+  # Color theme: default, dark, light, ocean, forest
+  theme: default
+
+session:
+  # Default preset to use when --preset is not specified
+  default_preset: default
+  
+  # Automatically clean up old worktrees
+  auto_clean_worktrees: false
+  
+  # How many days to keep old worktrees (when auto_clean is enabled)
+  worktree_retention_days: 7
+
