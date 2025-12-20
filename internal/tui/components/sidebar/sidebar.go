@@ -48,9 +48,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Keys.Down):
-			m.viewport.LineDown(1)
+			m.viewport.ScrollDown(1)
 		case key.Matches(msg, keys.Keys.Up):
-			m.viewport.LineUp(1)
+			m.viewport.ScrollUp(1)
 		}
 
 	case tea.WindowSizeMsg:

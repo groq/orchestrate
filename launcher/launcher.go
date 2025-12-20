@@ -97,7 +97,7 @@ func Launch(opts Options) Result {
 
 			// Save session metadata
 			sessionMeta := config.CreateSessionMetadata(opts.Repo, branchName, opts.Prompt, opts.PresetName, []string{w.Agent})
-			config.SaveSessionMetadata(worktreePath, sessionMeta)
+			_ = config.SaveSessionMetadata(worktreePath, sessionMeta) // Ignore error - metadata is non-critical
 
 			// Add the agent session
 			sessions = append(sessions, terminal.SessionInfo{

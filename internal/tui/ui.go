@@ -428,7 +428,7 @@ func (m Model) doReopenWorktree(wt *worktrees.WorktreeItem) tea.Cmd {
 		}
 		defer mgr.Close()
 
-		windowCount, err := mgr.LaunchSessions(sessions, wt.Prompt)
+		windowCount, err := mgr.LaunchSessions(sessions, "")
 		if err != nil {
 			return LaunchResultMsg{Err: err}
 		}

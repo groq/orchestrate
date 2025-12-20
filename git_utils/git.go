@@ -304,8 +304,8 @@ func GetStatusStatsWithCmd(cmd Commander, path string) (adds, deletes int, err e
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			var a, d int
-			fmt.Sscanf(parts[0], "%d", &a)
-			fmt.Sscanf(parts[1], "%d", &d)
+			_, _ = fmt.Sscanf(parts[0], "%d", &a)
+			_, _ = fmt.Sscanf(parts[1], "%d", &d)
 			adds += a
 			deletes += d
 		}
@@ -337,8 +337,8 @@ func GetDetailedStatusStatsWithCmd(cmd Commander, path string) ([]FileStats, err
 		parts := strings.Split(line, "\t")
 		if len(parts) >= 3 {
 			var a, d int
-			fmt.Sscanf(parts[0], "%d", &a)
-			fmt.Sscanf(parts[1], "%d", &d)
+			_, _ = fmt.Sscanf(parts[0], "%d", &a)
+			_, _ = fmt.Sscanf(parts[1], "%d", &d)
 			stats = append(stats, FileStats{
 				Path:    parts[2],
 				Adds:    a,

@@ -477,7 +477,7 @@ func (m Model) renderActions() string {
 	}{
 		{"↑/↓", "navigate"},
 		{"enter", "focus"},
-		{"o", "open new"},
+		{"o", "open"},
 		{"d", "details"},
 		{"ctrl+r", "refresh"},
 	}

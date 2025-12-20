@@ -140,7 +140,7 @@ func TestUpdateEnterKey(t *testing.T) {
 		},
 	}
 
-	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Enter key should return a command")
 	}
@@ -171,7 +171,7 @@ func TestUpdateDetailsKey(t *testing.T) {
 		},
 	}
 
-	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	if cmd == nil {
 		t.Fatal("'d' key should return a command")
 	}
@@ -202,7 +202,7 @@ func TestUpdateOpenKey(t *testing.T) {
 		},
 	}
 
-	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if cmd == nil {
 		t.Fatal("'o' key should return a command")
 	}

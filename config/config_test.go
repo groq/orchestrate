@@ -920,7 +920,7 @@ func TestSavePresetConfig_NilConfig(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Saving nil config should work (creates empty/zero-value config)
-	err = SavePresetConfig(tmpDir, nil)
+	_ = SavePresetConfig(tmpDir, nil)
 	// The yaml.Marshal might handle nil, but if not, we expect an error
 	// Either way is acceptable behavior
 }
