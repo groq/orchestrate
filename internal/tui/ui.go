@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"orchestrate/config"
@@ -226,6 +227,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case worktrees.DeleteWorktreeMsg:
+		// Delete worktree
+		if msg.Worktree != nil {
+			m.ctx.SetStatus(fmt.Sprintf("Deleting worktree: %s...", msg.Worktree.Name), false)
+			return m, m.doDeleteWorktree(msg.Worktree)
+		}
+		return m, nil
+
+	case worktrees.WorktreeDeletedMsg:
+		var cmd tea.Cmd
+		m.worktreeList, cmd = m.worktreeList.Update(msg)
+		if msg.Err != nil {
+			m.ctx.SetStatus(fmt.Sprintf("Delete failed: %v", msg.Err), true)
+		} else {
+			m.ctx.SetStatus("Worktree deleted successfully", false)
+		}
+		return m, cmd
+
 	case launch.LaunchRequestMsg:
 		// Handle launch request
 		m.launching = true
@@ -436,6 +455,24 @@ func (m Model) doReopenWorktree(wt *worktrees.WorktreeItem) tea.Cmd {
 		return LaunchResultMsg{
 			Sessions:  len(sessions),
 			Worktrees: windowCount,
+		}
+	}
+}
+
+func (m Model) doDeleteWorktree(wt *worktrees.WorktreeItem) tea.Cmd {
+	return func() tea.Msg {
+		// Delete the worktree directory
+		err := os.RemoveAll(wt.Path)
+		if err != nil {
+			return worktrees.WorktreeDeletedMsg{
+				Path: wt.Path,
+				Err:  fmt.Errorf("failed to delete worktree directory: %w", err),
+			}
+		}
+
+		return worktrees.WorktreeDeletedMsg{
+			Path: wt.Path,
+			Err:  nil,
 		}
 	}
 }

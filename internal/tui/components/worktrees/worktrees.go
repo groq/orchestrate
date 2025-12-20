@@ -41,14 +41,16 @@ type WorktreeItem struct {
 
 // Model represents the worktrees component.
 type Model struct {
-	ctx          *context.ProgramContext
-	worktrees    []WorktreeItem
-	selected     int
-	loading      bool
-	spinner      spinner.Model
-	err          error
-	dimensions   constants.Dimensions
-	worktreesDir string
+	ctx              *context.ProgramContext
+	worktrees        []WorktreeItem
+	selected         int
+	loading          bool
+	spinner          spinner.Model
+	err              error
+	dimensions       constants.Dimensions
+	worktreesDir     string
+	confirmingDelete bool
+	deleteTarget     *WorktreeItem
 }
 
 // WorktreesLoadedMsg is sent when worktrees are loaded.
@@ -70,6 +72,17 @@ type OpenWorktreeMsg struct {
 // FocusWorktreeMsg is sent when an existing worktree iTerm window should be focused.
 type FocusWorktreeMsg struct {
 	Worktree *WorktreeItem
+}
+
+// DeleteWorktreeMsg is sent when a worktree should be deleted.
+type DeleteWorktreeMsg struct {
+	Worktree *WorktreeItem
+}
+
+// WorktreeDeletedMsg is sent when a worktree has been deleted.
+type WorktreeDeletedMsg struct {
+	Path string
+	Err  error
 }
 
 // New creates a new worktrees model.
@@ -253,6 +266,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
+		// If confirming delete, only handle y/n
+		if m.confirmingDelete {
+			switch msg.String() {
+			case "y", "Y":
+				// Confirm delete
+				if m.deleteTarget != nil {
+					target := m.deleteTarget
+					m.confirmingDelete = false
+					m.deleteTarget = nil
+					return m, func() tea.Msg {
+						return DeleteWorktreeMsg{Worktree: target}
+					}
+				}
+			case "n", "N", "esc":
+				// Cancel delete
+				m.confirmingDelete = false
+				m.deleteTarget = nil
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "up", "k":
 			if m.selected > 0 {
@@ -289,11 +323,26 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return OpenWorktreeMsg{Worktree: wt}
 				}
 			}
+		case "x", "delete":
+			// Show delete confirmation
+			if wt := m.SelectedWorktree(); wt != nil {
+				m.confirmingDelete = true
+				m.deleteTarget = wt
+			}
 		}
 
 		if key.Matches(msg, keys.Keys.Refresh) {
 			return m, m.Refresh()
 		}
+
+	case WorktreeDeletedMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.err = msg.Err
+			return m, nil
+		}
+		// Refresh the worktree list after deletion
+		return m, m.Refresh()
 	}
 
 	return m, nil
@@ -343,18 +392,18 @@ func (m Model) View() string {
 	headerStyle := m.ctx.Styles.Table.TitleCellStyle
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
 		headerStyle.Width(4).Render(""),
-		headerStyle.Width(25).Render("Name"),
-		headerStyle.Width(18).Render("Repo"),
-		headerStyle.Width(15).Render("Changes"),
-		headerStyle.Width(12).Render("Agent"),
-		headerStyle.Width(15).Render("Last Commit"),
+		headerStyle.Width(35).Render("Name"),
+		headerStyle.Width(30).Render("Repo"),
+		headerStyle.Width(18).Render("Changes"),
+		headerStyle.Width(15).Render("Agent"),
+		headerStyle.Width(18).Render("Last Commit"),
 	)
 	content.WriteString(header)
 	content.WriteString("\n")
 
 	// Separator
 	sepStyle := lipgloss.NewStyle().Foreground(m.ctx.Theme.FaintBorder)
-	content.WriteString(sepStyle.Render(strings.Repeat("─", min(m.dimensions.Width-4, 80))))
+	content.WriteString(sepStyle.Render(strings.Repeat("─", min(m.dimensions.Width-4, 120))))
 	content.WriteString("\n")
 
 	// Worktree rows (limit visible rows based on height)
@@ -386,7 +435,14 @@ func (m Model) View() string {
 	content.WriteString("\n")
 	content.WriteString(m.renderActions())
 
-	return m.wrapContent(content.String())
+	output := m.wrapContent(content.String())
+
+	// Show confirmation dialog if deleting
+	if m.confirmingDelete && m.deleteTarget != nil {
+		output = m.renderWithConfirmDialog(output, m.deleteTarget)
+	}
+
+	return output
 }
 
 func (m Model) renderWorktreeRow(index int, wt WorktreeItem) string {
@@ -402,16 +458,16 @@ func (m Model) renderWorktreeRow(index int, wt WorktreeItem) string {
 
 	// Name (shortened if needed)
 	name := wt.Name
-	if len(name) > 24 {
-		name = name[:21] + "..."
+	if len(name) > 34 {
+		name = name[:31] + "..."
 	}
 
 	// Repo (shortened)
 	repo := wt.Repo
 	if repo == "" {
 		repo = "-"
-	} else if len(repo) > 15 {
-		repo = "..." + repo[len(repo)-12:]
+	} else if len(repo) > 28 {
+		repo = "..." + repo[len(repo)-25:]
 	}
 
 	// Stats badge
@@ -460,11 +516,11 @@ func (m Model) renderWorktreeRow(index int, wt WorktreeItem) string {
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
 		cellStyle.Width(4).Render(cursor+statusStyle.Render(statusIcon)),
-		cellStyle.Width(25).Render(name),
-		cellStyle.Width(18).Render(repo),
-		cellStyle.Width(15).Render(statsBadge),
-		cellStyle.Width(12).Render(agentBadge),
-		cellStyle.Width(15).Render(lastCommit),
+		cellStyle.Width(35).Render(name),
+		cellStyle.Width(30).Render(repo),
+		cellStyle.Width(18).Render(statsBadge),
+		cellStyle.Width(15).Render(agentBadge),
+		cellStyle.Width(18).Render(lastCommit),
 	)
 
 	return row
@@ -479,6 +535,7 @@ func (m Model) renderActions() string {
 		{"enter", "focus"},
 		{"o", "open"},
 		{"d", "details"},
+		{"x", "delete"},
 		{"ctrl+r", "refresh"},
 	}
 
@@ -500,6 +557,64 @@ func (m Model) wrapContent(content string) string {
 		Width(m.dimensions.Width).
 		Height(m.dimensions.Height).
 		Render(content)
+}
+
+func (m Model) renderWithConfirmDialog(background string, wt *WorktreeItem) string {
+	// Create confirmation dialog
+	dialogWidth := 60
+	dialogHeight := 10
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.ctx.Theme.ErrorText).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
+
+	messageStyle := lipgloss.NewStyle().
+		Foreground(m.ctx.Theme.PrimaryText).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
+
+	infoStyle := lipgloss.NewStyle().
+		Foreground(m.ctx.Theme.FaintText).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
+
+	promptStyle := lipgloss.NewStyle().
+		Foreground(m.ctx.Theme.PrimaryText).
+		Width(dialogWidth - 4).
+		Align(lipgloss.Center)
+
+	var dialogContent strings.Builder
+	dialogContent.WriteString(titleStyle.Render(constants.WarningIcon + " Delete Worktree"))
+	dialogContent.WriteString("\n\n")
+	dialogContent.WriteString(messageStyle.Render("Are you sure you want to delete this worktree?"))
+	dialogContent.WriteString("\n\n")
+	dialogContent.WriteString(infoStyle.Render("Name: " + wt.Name))
+	dialogContent.WriteString("\n")
+	dialogContent.WriteString(infoStyle.Render("Path: " + wt.Path))
+	dialogContent.WriteString("\n\n")
+	dialogContent.WriteString(promptStyle.Render("Press Y to confirm, N to cancel"))
+
+	dialogBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.ctx.Theme.ErrorText).
+		Background(m.ctx.Theme.Background).
+		Width(dialogWidth).
+		Height(dialogHeight).
+		Padding(1, 2).
+		Render(dialogContent.String())
+
+	// Overlay dialog on background
+	return lipgloss.Place(
+		m.dimensions.Width,
+		m.dimensions.Height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialogBox,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("#000000")),
+	)
 }
 
 // SetDimensions sets the component dimensions.

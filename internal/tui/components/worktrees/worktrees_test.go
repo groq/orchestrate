@@ -272,7 +272,7 @@ func TestRenderActionsContent(t *testing.T) {
 	}
 
 	// Check for key action labels
-	expectedKeys := []string{"navigate", "focus", "open new", "details", "refresh"}
+	expectedKeys := []string{"navigate", "focus", "open", "details", "delete", "refresh"}
 	for _, key := range expectedKeys {
 		if !strings.Contains(actions, key) {
 			t.Errorf("Actions should contain '%s'", key)
