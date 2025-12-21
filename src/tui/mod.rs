@@ -129,7 +129,6 @@ enum LaunchField {
 enum SettingsField {
     TerminalType,
     Maximize,
-    Theme,
     DefaultPreset,
     AutoClean,
     RetentionDays,
@@ -251,8 +250,40 @@ impl WorktreeItem {
 }
 
 fn clean_log_line(line: String) -> String {
+    // Strip ANSI escape sequences for display (keeps them in actual log files)
     let mut cleaned = String::new();
-    for ch in line.chars() {
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Start of ANSI escape sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Skip until we hit a letter (the command character)
+                while let Some(&c) = chars.peek() {
+                    chars.next();
+                    if c.is_ascii_alphabetic() || c == 'H' || c == 'K' || c == 'm' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            // Also handle other escape sequences like \x1b]
+            if chars.peek() == Some(&']') {
+                chars.next();
+                // OSC sequence - skip until BEL (\x07) or ST (\x1b\\)
+                while let Some(c) = chars.next() {
+                    if c == '\x07' {
+                        break;
+                    }
+                    if c == '\x1b' && chars.peek() == Some(&'\\') {
+                        chars.next();
+                        break;
+                    }
+                }
+                continue;
+            }
+            continue;
+        }
         if ch == '\t' {
             cleaned.push_str("  ");
             continue;
@@ -286,8 +317,7 @@ impl SettingsForm {
     fn next_field(&mut self) {
         self.focused = match self.focused {
             SettingsField::TerminalType => SettingsField::Maximize,
-            SettingsField::Maximize => SettingsField::Theme,
-            SettingsField::Theme => SettingsField::DefaultPreset,
+            SettingsField::Maximize => SettingsField::DefaultPreset,
             SettingsField::DefaultPreset => SettingsField::AutoClean,
             SettingsField::AutoClean => SettingsField::RetentionDays,
             SettingsField::RetentionDays => SettingsField::TerminalType,
@@ -298,8 +328,7 @@ impl SettingsForm {
         self.focused = match self.focused {
             SettingsField::TerminalType => SettingsField::RetentionDays,
             SettingsField::Maximize => SettingsField::TerminalType,
-            SettingsField::Theme => SettingsField::Maximize,
-            SettingsField::DefaultPreset => SettingsField::Theme,
+            SettingsField::DefaultPreset => SettingsField::Maximize,
             SettingsField::AutoClean => SettingsField::DefaultPreset,
             SettingsField::RetentionDays => SettingsField::AutoClean,
         }
@@ -787,22 +816,6 @@ impl App {
                 if delta != 0 {
                     self.settings_form.app_settings.terminal.maximize_on_launch =
                         !self.settings_form.app_settings.terminal.maximize_on_launch;
-                }
-            }
-            SettingsField::Theme => {
-                let themes = appsettings::theme_options();
-                if let Some(idx) = themes
-                    .iter()
-                    .position(|t| *t == self.settings_form.app_settings.ui.theme)
-                {
-                    let mut new_idx = idx as i32 + delta;
-                    if new_idx < 0 {
-                        new_idx = themes.len() as i32 - 1;
-                    }
-                    if new_idx >= themes.len() as i32 {
-                        new_idx = 0;
-                    }
-                    self.settings_form.app_settings.ui.theme = themes[new_idx as usize].to_string();
                 }
             }
             SettingsField::DefaultPreset => {
@@ -1974,11 +1987,6 @@ impl App {
                     "Disabled".to_string()
                 },
                 self.settings_form.focused == SettingsField::Maximize,
-            ),
-            (
-                "Theme".to_string(),
-                format!("< {} >", self.settings_form.app_settings.ui.theme),
-                self.settings_form.focused == SettingsField::Theme,
             ),
             (
                 "Default Preset".to_string(),

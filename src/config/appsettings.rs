@@ -38,23 +38,16 @@ impl Default for TerminalSettings {
 pub struct UISettings {
     #[serde(default = "default_show_status_bar")]
     pub show_status_bar: bool,
-    #[serde(default = "default_theme")]
-    pub theme: String,
 }
 
 fn default_show_status_bar() -> bool {
     true
 }
 
-fn default_theme() -> String {
-    "default".to_string()
-}
-
 impl Default for UISettings {
     fn default() -> Self {
         UISettings {
             show_status_bar: true,
-            theme: default_theme(),
         }
     }
 }
@@ -106,7 +99,6 @@ impl Default for AppSettings {
             },
             ui: UISettings {
                 show_status_bar: true,
-                theme: default_theme(),
             },
             session: SessionSettings {
                 default_preset: default_preset_name(),
@@ -135,9 +127,6 @@ pub fn load_app_settings(dir: &Path) -> Result<(AppSettings, PathBuf)> {
         .with_context(|| format!("failed parsing app settings {}", path.display()))?;
     // Ensure defaults for missing fields
     let defaults = default_app_settings();
-    if settings.ui.theme.is_empty() {
-        settings.ui.theme = defaults.ui.theme;
-    }
     if settings.session.default_preset.is_empty() {
         settings.session.default_preset = defaults.session.default_preset;
     }
@@ -154,6 +143,3 @@ pub fn save_app_settings(dir: &Path, settings: &AppSettings) -> Result<()> {
     Ok(())
 }
 
-pub fn theme_options() -> Vec<&'static str> {
-    vec!["default", "dark", "light"]
-}
