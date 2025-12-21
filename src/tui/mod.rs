@@ -1056,6 +1056,12 @@ impl App {
 
         self.draw_header(f, chunks[0]);
 
+        // Fill the body with the app background so margins match the worktrees page
+        if let Some(body_area) = chunks.get(1) {
+            let background = Block::default().style(Style::default().bg(SURFACE_BG));
+            f.render_widget(background, *body_area);
+        }
+
         if self.sidebar_open {
             let body_chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -2118,9 +2124,9 @@ impl App {
         let outer = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(10),
-                Constraint::Percentage(80),
-                Constraint::Percentage(10),
+                Constraint::Percentage(20),
+                Constraint::Percentage(60),
+                Constraint::Percentage(20),
             ])
             .split(area);
 
