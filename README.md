@@ -4,6 +4,8 @@
 
 **Run AI coding agents, custom dev environments, or both — each in their own git worktree**
 
+Now rewritten in **Rust** with a polished **Ratatui** interface.
+
 <br>
 
 ![droid](https://img.shields.io/badge/droid-ff8c00?style=for-the-badge&logoColor=white)
@@ -38,9 +40,9 @@ presets:
   fullstack:
     - agent: claude
       commands:
-        - command: "npm run dev"
+        - command: "./bin/go run ./cmd/server"
           title: "Dev Server"
-        - command: "npm run test:watch"
+        - command: "./bin/go test ./..."
           title: "Tests"
         - command: ""
           title: "Shell"
@@ -82,10 +84,11 @@ This clones/updates the repo from the main branch, creates isolated git worktree
 ## 📦 Installation
 
 ```bash
-go install github.com/groq/orchestrate@latest
+# from the repo root
+cargo install --path .
 ```
 
-**Requirements:** macOS with iTerm2, Go 1.21+, and your preferred AI coding agents installed.
+**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
 
 ---
 
@@ -97,7 +100,7 @@ go install github.com/groq/orchestrate@latest
 | `--name` | **Required.** Branch name prefix for worktrees. Each branch gets a unique hex suffix. |
 | `--prompt` | **Required.** The prompt to pass to each agent. |
 | `--preset` | Use a preset from `settings.yaml`. Defaults to the config's default preset. |
-| `--n` | Multiplier for agent windows. `--n 2` runs each agent twice. |
+| `--n` | Multiplier for agent worktrees. `--n 2` runs each agent twice. |
 
 ---
 
@@ -195,6 +198,18 @@ presets:
 
 Agents must be installed and available in your PATH.
 
+### 🪵 Tracking shell commands in the activity log
+
+Every agent shell defines a `track` helper when logging is enabled for that worktree. Use it to replace or rerun commands while keeping the activity panel up to date:
+
+```bash
+# inside the agent shell
+track npm test
+track ./bin/dev-server
+```
+
+`track` pipes stdout/stderr to the worktree’s activity log (e.g. `~/.orchestrate/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
+
 ---
 
 ## ⚙️ Configuration
@@ -232,6 +247,15 @@ presets:
 | `color` | Hex color for the tab, e.g., `#ff8800` |
 
 > 💡 Commands run in their parent agent's worktree and show the branch name in the title.
+
+### TUI Navigation (Ratatui)
+
+- `1/2/3/4` to jump to Worktrees / Launch / Settings / Presets
+- `Tab` / `Shift+Tab` cycles views
+- `?` toggles the help overlay
+- Worktrees: `↑/↓/g/G` navigate, `Enter` focus existing window, `o` reopen, `d` details sidebar, `x` delete with confirm, `Ctrl+R` refresh, `Ctrl+P` toggle sidebar
+- Launch: arrows or Tab to move, `Ctrl+Enter` or Launch button to start sessions, `←/→` cycle presets
+- Settings: `↑/↓` select, `←/→` toggle values, `Enter` saves
 
 ---
 
@@ -274,18 +298,28 @@ Inside this directory:
 
 ```
 orchestrate/
-├── main.go           # CLI entry point
-├── config/           # YAML configuration loading
-├── git/              # Git worktree operations
-├── agents/           # Agent parsing and colors
-├── terminal/         # iTerm2 window management
-└── util/             # Utilities
+├── Cargo.toml        # Rust package manifest
+├── src/
+│   ├── main.rs       # CLI entry point (ui flag launches TUI)
+│   ├── util.rs       # Data dir helpers, random hex, path display
+│   ├── agents.rs     # Agent colors and helpers
+│   ├── git.rs        # Git worktree and status helpers
+│   ├── terminal.rs   # iTerm2 AppleScript/session grid logic
+│   ├── launcher.rs   # Worktree creation + session launching
+│   ├── config/       # settings.yaml + orchestrate.yaml + session metadata
+│   └── tui/          # Ratatui-driven UI (worktrees, launch form, settings)
 ```
+
+---
+
+## 🙏 Acknowledgments
+
+The terminal UI is heavily inspired by and borrows design patterns from [**gh-dash**](https://github.com/dlvhdr/gh-dash) by [@dlvhdr](https://github.com/dlvhdr) — a beautiful GitHub CLI dashboard. Thank you for the excellent reference implementation!
 
 ---
 
 <div align="center">
 
-**Built with Go** • **Requires macOS + iTerm2**
+**Built with Rust + Ratatui** • **Requires macOS + iTerm2**
 
 </div>
