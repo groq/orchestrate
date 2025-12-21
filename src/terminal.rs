@@ -103,6 +103,21 @@ fn osascript_escape(input: &str) -> String {
         .replace('\n', "\\n")
 }
 
+fn shell_escape(input: &str) -> String {
+    // Escape characters that have special meaning in shell
+    let mut escaped = String::with_capacity(input.len() * 2);
+    for ch in input.chars() {
+        match ch {
+            '$' | '`' | '"' | '\\' | '!' => {
+                escaped.push('\\');
+                escaped.push(ch);
+            }
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 fn build_session_command(session: &SessionInfo, prompt: &str) -> String {
     if session.is_custom_command {
         build_custom_command(session)
@@ -129,13 +144,14 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
     }
 
     if let Some(path) = &session.path {
-        cmd_parts.push(format!("cd \"{}\"", path));
+        cmd_parts.push(format!("cd \"{}\"", shell_escape(path)));
     }
 
     if let Some(log) = &session.activity_log {
+        let escaped_log = shell_escape(log);
         let track_fn = format!(
             "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
-            log = log
+            log = escaped_log
         );
         cmd_parts.push(track_fn);
     }
@@ -147,9 +163,10 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
 
     if let Some(agent) = &session.agent {
         if let Some(log) = &session.activity_log {
+            let escaped_log = shell_escape(log);
             cmd_parts.push(format!(
                 "LOG=\"{}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
-                log, agent, escaped_prompt
+                escaped_log, agent, escaped_prompt
             ));
         } else {
             cmd_parts.push(format!("{} '{}'", agent, escaped_prompt));
@@ -182,12 +199,12 @@ fn build_custom_command(session: &SessionInfo) -> String {
     }
 
     if let Some(path) = &session.worktree_path {
-        cmd_parts.push(format!("cd \"{}\"", path));
+        cmd_parts.push(format!("cd \"{}\"", shell_escape(path)));
     }
 
     if let Some(branch) = &session.worktree_branch {
         if !branch.is_empty() {
-            cmd_parts.push(format!("echo 'Branch: {}'", branch));
+            cmd_parts.push(format!("echo 'Branch: {}'", shell_escape(branch)));
         }
     }
 
@@ -408,5 +425,16 @@ mod tests {
             !cmd.contains("script -q -a"),
             "script logging should not be added without a log path"
         );
+    }
+
+    #[test]
+    fn shell_escape_handles_special_chars() {
+        assert_eq!(shell_escape("normal"), "normal");
+        assert_eq!(shell_escape("with$dollar"), "with\\$dollar");
+        assert_eq!(shell_escape("with`backtick"), "with\\`backtick");
+        assert_eq!(shell_escape("with\"quote"), "with\\\"quote");
+        assert_eq!(shell_escape("with\\backslash"), "with\\\\backslash");
+        assert_eq!(shell_escape("/path/with spaces"), "/path/with spaces");
+        assert_eq!(shell_escape("/home/$USER/dir"), "/home/\\$USER/dir");
     }
 }

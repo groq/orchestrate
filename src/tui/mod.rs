@@ -258,7 +258,7 @@ fn clean_log_line(line: String) -> String {
             // Start of ANSI escape sequence
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                // Skip until we hit a letter (the command character)
+                              // Skip until we hit a letter (the command character)
                 while let Some(&c) = chars.peek() {
                     chars.next();
                     if c.is_ascii_alphabetic() || c == 'H' || c == 'K' || c == 'm' {

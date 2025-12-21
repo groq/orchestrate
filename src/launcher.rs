@@ -54,7 +54,7 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
             continue;
         }
         let mut effective_n = w.get_n();
-        if opts.multiplier > 1 {
+        if opts.multiplier > 0 {
             effective_n = opts.multiplier;
         }
 

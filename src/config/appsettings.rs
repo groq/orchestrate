@@ -142,4 +142,3 @@ pub fn save_app_settings(dir: &Path, settings: &AppSettings) -> Result<()> {
         .with_context(|| format!("failed writing {}", path.display()))?;
     Ok(())
 }
-
