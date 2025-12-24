@@ -364,8 +364,8 @@ fn clean_log_line(line: String) -> String {
         }
         cleaned.push(ch);
     }
-    if cleaned.len() > 180 {
-        cleaned.truncate(177);
+    if cleaned.chars().count() > 180 {
+        cleaned = cleaned.chars().take(177).collect();
         cleaned.push('…');
     }
     cleaned
@@ -1402,8 +1402,8 @@ impl App {
             .unwrap_or_else(|| "—".to_string());
         if prompt_preview.is_empty() {
             prompt_preview = "—".to_string();
-        } else if !self.prompt_expanded && prompt_preview.len() > 140 {
-            prompt_preview.truncate(140);
+        } else if !self.prompt_expanded && prompt_preview.chars().count() > 140 {
+            prompt_preview = prompt_preview.chars().take(140).collect();
             prompt_preview.push_str("… ");
         }
 
@@ -2182,15 +2182,105 @@ impl App {
     }
 
     fn draw_presets(&self, f: &mut Frame, area: Rect) {
-        // Center the presets panel
+        // Layout: left sidebar for instructions, right panel for presets
         let outer = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(20),
-                Constraint::Percentage(60),
-                Constraint::Percentage(20),
+                Constraint::Percentage(5),
+                Constraint::Percentage(35),
+                Constraint::Percentage(55),
+                Constraint::Percentage(5),
             ])
             .split(area);
+
+        let settings_path = util::display_path(self.data_dir.join("settings.yaml"));
+
+        // Left sidebar with instructions
+        let instructions = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Config Location",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                settings_path.clone(),
+                Style::default().fg(ACCENT),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Example:",
+                Style::default().fg(Color::White),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "presets:",
+                Style::default().fg(ACCENT),
+            )),
+            Line::from(Span::styled(
+                "  my-preset:",
+                Style::default().fg(ACCENT),
+            )),
+            Line::from(Span::styled(
+                "    - agent: claude",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "      n: 2",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "      commands:",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "        - command: \"\"",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "        - command: npm run dev",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Fields:",
+                Style::default().fg(Color::White),
+            )),
+            Line::from(Span::styled(
+                "• agent: claude, codex, etc.",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "• n: number of instances",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "• commands: extra terminal panes",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "  in the same worktree",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "  \"\" = blank, or specify a cmd",
+                Style::default().fg(DIM_TEXT),
+            )),
+        ])
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(LIGHT_BORDER))
+                .style(Style::default().bg(SURFACE_BG))
+                .title(Span::styled(
+                    " Guide ",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )),
+        );
+        f.render_widget(instructions, outer[1]);
 
         if let Some(cfg) = &self.preset_config {
             let mut items = Vec::new();
@@ -2218,7 +2308,7 @@ impl App {
                     for cmd in &wt.commands {
                         let title = cmd.display_title();
                         lines.push(Line::from(vec![
-                            Span::styled("       -> ", Style::default().fg(DIM_TEXT)),
+                            Span::styled("       + ", Style::default().fg(DIM_TEXT)),
                             Span::styled(title, Style::default().fg(Color::Rgb(150, 150, 160))),
                         ]));
                     }
@@ -2239,7 +2329,7 @@ impl App {
                         )),
                 )
                 .highlight_style(Style::default().fg(ACCENT));
-            f.render_widget(list, outer[1]);
+            f.render_widget(list, outer[2]);
         } else {
             let empty_msg = Paragraph::new(vec![
                 Line::from(""),
@@ -2251,7 +2341,7 @@ impl App {
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "Create a settings.yaml file in your data directory",
+                    format!("Edit {}", settings_path),
                     Style::default().fg(DIM_TEXT),
                 )),
                 Line::from(Span::styled(
@@ -2271,7 +2361,7 @@ impl App {
                         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                     )),
             );
-            f.render_widget(empty_msg, outer[1]);
+            f.render_widget(empty_msg, outer[2]);
         }
     }
 
