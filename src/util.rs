@@ -1,12 +1,13 @@
 use anyhow::Result;
-use rand::RngCore;
+use rand::rngs::OsRng;
+use rand::TryRngCore;
 use std::env;
 use std::path::{Path, PathBuf};
 
 /// Generate a random hex string of `n` bytes (2n hex characters).
 pub fn random_hex(n: usize) -> String {
     let mut bytes = vec![0u8; n];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    OsRng.try_fill_bytes(&mut bytes).expect("OS RNG failure");
     hex::encode(bytes)
 }
 
