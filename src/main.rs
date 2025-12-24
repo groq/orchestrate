@@ -55,6 +55,9 @@ fn main() -> anyhow::Result<()> {
         appsettings::save_app_settings(&data_dir, &app_settings).ok();
     }
 
+    // Ensure default settings.yaml exists (copy from embedded default if missing)
+    preset::ensure_default_settings(&data_dir).ok();
+
     // Load preset config
     let preset_result = preset::load(&data_dir);
     let preset_config: Option<PresetConfig> = preset_result.config;

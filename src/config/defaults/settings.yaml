@@ -1,28 +1,15 @@
 # Dispatch configuration with presets
 
 # Default preset to use when --preset is not specified
-default: codex
+default: claude
 
 # Named presets
 presets:
-  standard:
-    - agent: droid
+  claude:
+    - agent: claude
       commands:
         - command: ""
-    - agent: codex
-    - agent: codex
 
-  eval:
-    - agent: droid
-    - agent: claude
-    - agent: codex
-
-  parallel:
-    - agent: claude
-      n: 2
-    - agent: codex
-      n: 2
-    
   codex:
     - agent: codex
       commands:
@@ -33,7 +20,13 @@ presets:
       commands:
         - command: ""
 
-  claude:
+  parallel:
     - agent: claude
-      commands:
-        - command: ""
+      n: 2
+    - agent: codex
+      n: 2
+
+  eval:
+    - agent: droid
+    - agent: claude
+    - agent: codex
