@@ -283,6 +283,12 @@ fn build_window_script(chunk: &[SessionInfo], prompt: &str) -> String {
 }
 
 fn run_osascript(script: &str) -> Result<()> {
+    // In test mode, skip actual osascript execution to allow E2E testing
+    // without spawning real iTerm2 windows.
+    if std::env::var("DISPATCH_TEST_MODE").is_ok() {
+        return Ok(());
+    }
+
     let output = Command::new("osascript")
         .arg("-e")
         .arg(script)

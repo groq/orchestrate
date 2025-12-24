@@ -43,6 +43,8 @@ pub struct Worktree {
 }
 
 impl Worktree {
+    /// Get the effective n value, defaulting to 1 if n <= 0.
+    #[allow(dead_code)]
     pub fn get_n(&self) -> i64 {
         if self.n <= 0 {
             1

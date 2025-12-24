@@ -44,6 +44,41 @@ const SUCCESS_COLOR: Color = Color::Rgb(100, 220, 150); // Green for additions
 const ERROR_COLOR: Color = Color::Rgb(240, 100, 100); // Red for deletions/errors
 const WARNING_COLOR: Color = Color::Rgb(240, 180, 80); // Yellow for warnings
 
+/// Build launcher options from TUI form data.
+/// This function is extracted for testability - it ensures the TUI passes
+/// the correct multiplier value (0) to respect preset n values.
+fn build_launch_options(
+    repo: &str,
+    name: &str,
+    prompt: &str,
+    preset_name: &str,
+    preset_config: Option<&PresetConfig>,
+    data_dir: &PathBuf,
+    maximize_on_launch: bool,
+) -> launcher::Options {
+    let preset = preset_config
+        .and_then(|cfg| preset::get_preset(cfg, preset_name))
+        .unwrap_or_else(|| {
+            vec![preset::Worktree {
+                agent: "claude".to_string(),
+                n: 1,
+                commands: vec![],
+            }]
+        });
+    launcher::Options {
+        repo: repo.to_string(),
+        name: name.to_string(),
+        prompt: prompt.to_string(),
+        preset_name: preset_name.to_string(),
+        // IMPORTANT: multiplier must be 0 to respect preset n values.
+        // If multiplier > 0, it overrides all preset n values.
+        multiplier: 0,
+        data_dir: data_dir.clone(),
+        preset,
+        maximize_on_launch,
+    }
+}
+
 pub fn run(
     data_dir: PathBuf,
     app_settings: AppSettings,
@@ -942,27 +977,15 @@ impl App {
 
     fn submit_launch_form(&mut self) -> Result<()> {
         if let Some((repo, name, prompt, preset_name)) = self.launch_form.submit() {
-            let preset = self
-                .preset_config
-                .as_ref()
-                .and_then(|cfg| preset::get_preset(cfg, &preset_name))
-                .unwrap_or_else(|| {
-                    vec![preset::Worktree {
-                        agent: "claude".to_string(),
-                        n: 1,
-                        commands: vec![],
-                    }]
-                });
-            let opts = launcher::Options {
-                repo: repo.clone(),
-                name: name.clone(),
-                prompt: prompt.clone(),
-                preset_name: preset_name.clone(),
-                multiplier: 1,
-                data_dir: self.data_dir.clone(),
-                preset,
-                maximize_on_launch: self.app_settings.terminal.maximize_on_launch,
-            };
+            let opts = build_launch_options(
+                &repo,
+                &name,
+                &prompt,
+                &preset_name,
+                self.preset_config.as_ref(),
+                &self.data_dir,
+                self.app_settings.terminal.maximize_on_launch,
+            );
             match launcher::launch(opts) {
                 Ok(res) => {
                     self.set_status(
@@ -3029,6 +3052,235 @@ mod tests {
             assert!(actions.contains(&ConfirmDeleteAction::Confirm));
             assert!(actions.contains(&ConfirmDeleteAction::Cancel));
             assert!(actions.contains(&ConfirmDeleteAction::None));
+        }
+    }
+
+    // ==================== Launch Options Integration Tests ====================
+    // These tests verify that the TUI correctly builds launcher options,
+    // particularly that multiplier=0 is passed to respect preset n values.
+
+    mod launch_options {
+        use super::*;
+        use crate::config::preset::{Config as PresetConfig, Worktree};
+        use crate::launcher;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        fn create_test_preset_config() -> PresetConfig {
+            let mut presets = HashMap::new();
+
+            // Single agent preset with n=1
+            presets.insert(
+                "claude".to_string(),
+                vec![Worktree {
+                    agent: "claude".to_string(),
+                    n: 1,
+                    commands: vec![],
+                }],
+            );
+
+            // Parallel preset with n=2 for each agent
+            presets.insert(
+                "parallel".to_string(),
+                vec![
+                    Worktree {
+                        agent: "claude".to_string(),
+                        n: 2,
+                        commands: vec![],
+                    },
+                    Worktree {
+                        agent: "codex".to_string(),
+                        n: 2,
+                        commands: vec![],
+                    },
+                ],
+            );
+
+            // High n preset for stress testing
+            presets.insert(
+                "many".to_string(),
+                vec![Worktree {
+                    agent: "claude".to_string(),
+                    n: 5,
+                    commands: vec![],
+                }],
+            );
+
+            PresetConfig {
+                default: "claude".to_string(),
+                presets,
+            }
+        }
+
+        #[test]
+        fn build_launch_options_sets_multiplier_to_zero() {
+            // This test would have caught the original bug where multiplier was hardcoded to 1
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(
+                opts.multiplier, 0,
+                "TUI must pass multiplier=0 to respect preset n values"
+            );
+        }
+
+        #[test]
+        fn build_launch_options_preserves_preset_n_values() {
+            // Verify that preset n values are preserved in the options
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.preset.len(), 2, "parallel preset should have 2 worktrees");
+            assert_eq!(opts.preset[0].n, 2, "first worktree should have n=2");
+            assert_eq!(opts.preset[1].n, 2, "second worktree should have n=2");
+        }
+
+        #[test]
+        fn build_launch_options_with_high_n_preset() {
+            // Verify high n values are preserved
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "many",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].n, 5, "preset n=5 should be preserved");
+        }
+
+        #[test]
+        fn build_launch_options_unknown_preset_uses_default() {
+            // When preset is not found, should use default single claude agent
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "nonexistent",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].agent, "claude");
+            assert_eq!(opts.preset[0].n, 1);
+        }
+
+        #[test]
+        fn build_launch_options_no_preset_config() {
+            // When no preset config exists, should use default
+            let data_dir = PathBuf::from("/tmp/test");
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "any",
+                None,
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].agent, "claude");
+        }
+
+        #[test]
+        fn effective_n_respects_preset_when_multiplier_zero() {
+            // End-to-end test: verify that with multiplier=0, the preset n values
+            // are what determine how many instances get created.
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            // Calculate what the launcher would do with these options
+            for worktree in &opts.preset {
+                let effective_n = launcher::calculate_effective_n(worktree.n, opts.multiplier);
+                assert_eq!(
+                    effective_n, worktree.n,
+                    "With multiplier=0, effective_n should equal preset n ({})",
+                    worktree.n
+                );
+            }
+        }
+
+        #[test]
+        fn regression_test_multiplier_was_not_one() {
+            // This test explicitly documents and catches the bug where
+            // multiplier was incorrectly set to 1 instead of 0.
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            // The bug: multiplier was 1, which overrode all preset n values to 1
+            assert_ne!(
+                opts.multiplier, 1,
+                "REGRESSION: multiplier must NOT be 1 (this overrides preset n values)"
+            );
+
+            // Verify the fix: multiplier should be 0
+            assert_eq!(
+                opts.multiplier, 0,
+                "multiplier must be 0 to respect preset n values"
+            );
+
+            // Verify that with our options, a preset with n=2 would create 2 instances
+            let effective_n = launcher::calculate_effective_n(2, opts.multiplier);
+            assert_eq!(
+                effective_n, 2,
+                "preset with n=2 should create 2 instances, not 1"
+            );
         }
     }
 }

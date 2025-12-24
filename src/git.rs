@@ -42,7 +42,10 @@ pub fn ensure_repo(repo_spec: &str, base_dir: &Path) -> Result<PathBuf> {
     let repo_path = base_dir.join(format!("{}-{}", owner, repo));
 
     if repo_path.join(".git").exists() {
-        fetch_and_reset(&repo_path)?;
+        // In test mode, skip fetch/reset since we use local repos without remotes
+        if std::env::var("DISPATCH_TEST_MODE").is_err() {
+            fetch_and_reset(&repo_path)?;
+        }
         return Ok(repo_path);
     }
 

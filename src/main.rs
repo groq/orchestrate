@@ -1,13 +1,8 @@
-mod agents;
-mod config;
-mod git;
-mod launcher;
-mod terminal;
-mod tui;
-mod util;
-
-use crate::config::appsettings;
-use crate::config::preset::{self, Config as PresetConfig};
+use dispatch::config::appsettings;
+use dispatch::config::preset::{self, Config as PresetConfig};
+use dispatch::launcher;
+use dispatch::tui;
+use dispatch::util;
 use clap::Parser;
 use std::fs;
 
