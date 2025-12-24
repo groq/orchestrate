@@ -1,4 +1,4 @@
-# Orchestrate configuration with presets
+# Dispatch configuration with presets
 
 # Default preset to use when --preset is not specified
 default: codex
@@ -36,16 +36,4 @@ presets:
   claude:
     - agent: claude
       commands:
-        - command: ""
-
-  compound-codex:
-    - agent: codex
-      commands:
-        - command: "./bin/go run ./cmd/compound-lib"
-        - command: ""
-
-  compound-droid:
-    - agent: droid
-      commands:
-        - command: "./bin/go run ./cmd/compound-lib"
         - command: ""

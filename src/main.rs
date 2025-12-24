@@ -13,7 +13,7 @@ use std::fs;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "orchestrate",
+    name = "dispatch",
     about = "Run AI coding agents in isolated git worktrees"
 )]
 struct Cli {
@@ -164,7 +164,7 @@ fn main() -> anyhow::Result<()> {
 fn print_cli_usage() {
     eprintln!("CLI mode requires --repo, --name, and --prompt");
     eprintln!();
-    eprintln!("Usage: orchestrate --cli --repo <owner/repo> --name <branch> --prompt <prompt>");
+    eprintln!("Usage: dispatch --cli --repo <owner/repo> --name <branch> --prompt <prompt>");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --repo <owner/repo>   GitHub repo to clone");
@@ -174,8 +174,8 @@ fn print_cli_usage() {
     eprintln!("  --n <count>           Multiplier for agent worktrees (optional)");
     eprintln!();
     eprintln!("Example:");
-    eprintln!("  orchestrate --cli --repo owner/repo --name feature --prompt 'Fix bug'");
+    eprintln!("  dispatch --cli --repo owner/repo --name feature --prompt 'Fix bug'");
     eprintln!();
     eprintln!("Or run without --cli to launch the TUI:");
-    eprintln!("  orchestrate");
+    eprintln!("  dispatch");
 }

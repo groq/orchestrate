@@ -22,7 +22,7 @@ pub struct SessionMetadata {
     pub last_opened: Option<DateTime<Utc>>,
 }
 
-pub const SESSION_METADATA_FILE: &str = ".orchestrate-session.yaml";
+pub const SESSION_METADATA_FILE: &str = ".dispatch-session.yaml";
 
 pub fn create_session_metadata(
     repo: &str,
