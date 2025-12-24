@@ -1974,15 +1974,11 @@ impl App {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(if btn_focused {
-                Style::default().fg(ACCENT)
+                Style::default().fg(ACCENT).bg(SURFACE_BG)
             } else {
-                Style::default().fg(LIGHT_BORDER)
+                Style::default().fg(LIGHT_BORDER).bg(SURFACE_BG)
             })
-            .style(Style::default().bg(if btn_focused {
-                ACCENT_HIGHLIGHT_BG
-            } else {
-                SURFACE_BG
-            }));
+            .style(Style::default().bg(SURFACE_BG));
         let btn = Paragraph::new(Span::styled(
             "Launch Session",
             Style::default()
@@ -2023,15 +2019,11 @@ impl App {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(if focused {
-                Style::default().fg(ACCENT)
+                Style::default().fg(ACCENT).bg(SURFACE_BG)
             } else {
-                Style::default().fg(LIGHT_BORDER)
+                Style::default().fg(LIGHT_BORDER).bg(SURFACE_BG)
             })
-            .style(Style::default().bg(if focused {
-                ACCENT_HIGHLIGHT_BG
-            } else {
-                SURFACE_BG
-            }))
+            .style(Style::default().bg(SURFACE_BG))
             .title(Span::styled(
                 format!(" {} ", label),
                 Style::default().fg(if focused { ACCENT } else { DIM_TEXT }),
