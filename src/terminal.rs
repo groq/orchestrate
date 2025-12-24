@@ -150,7 +150,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
     if let Some(log) = &session.activity_log {
         let escaped_log = shell_escape(log);
         let track_fn = format!(
-            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
+            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \"$LOG\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
             log = escaped_log
         );
         cmd_parts.push(track_fn);
@@ -165,7 +165,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
         if let Some(log) = &session.activity_log {
             let escaped_log = shell_escape(log);
             cmd_parts.push(format!(
-                "LOG=\"{}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
+                "LOG=\"{}\"; mkdir -p \"$(dirname \"$LOG\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
                 escaped_log, agent, escaped_prompt
             ));
         } else {

@@ -116,6 +116,77 @@ enum View {
     Presets,
 }
 
+/// Actions that can be triggered from the worktrees view
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorktreeAction {
+    /// Navigate up in the list
+    NavigateUp,
+    /// Navigate down in the list
+    NavigateDown,
+    /// Jump to the first item
+    JumpToFirst,
+    /// Jump to the last item
+    JumpToLast,
+    /// Toggle details sidebar
+    ToggleDetails,
+    /// Expand/collapse prompt
+    TogglePromptExpanded,
+    /// Open/reopen the selected worktree
+    Open,
+    /// Focus or reopen the selected worktree
+    FocusOrOpen,
+    /// Initiate delete (shows confirmation)
+    InitiateDelete,
+    /// Refresh the worktree list
+    Refresh,
+    /// Toggle sidebar
+    ToggleSidebar,
+    /// No action for this key
+    None,
+}
+
+/// Actions for the delete confirmation dialog
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfirmDeleteAction {
+    /// Confirm deletion
+    Confirm,
+    /// Cancel deletion
+    Cancel,
+    /// No action (key not handled)
+    None,
+}
+
+/// Maps a key event to a worktree action (when not in confirmation dialog)
+fn map_worktree_key(key: KeyEvent) -> WorktreeAction {
+    match key.code {
+        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::ToggleSidebar
+        }
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::Refresh
+        }
+        KeyCode::Up | KeyCode::Char('k') => WorktreeAction::NavigateUp,
+        KeyCode::Down | KeyCode::Char('j') => WorktreeAction::NavigateDown,
+        KeyCode::Char('g') => WorktreeAction::JumpToFirst,
+        KeyCode::Char('G') => WorktreeAction::JumpToLast,
+        KeyCode::Char('d') => WorktreeAction::ToggleDetails,
+        KeyCode::Char('e') => WorktreeAction::TogglePromptExpanded,
+        KeyCode::Char('o') => WorktreeAction::Open,
+        KeyCode::Enter => WorktreeAction::FocusOrOpen,
+        KeyCode::Char('x') | KeyCode::Delete | KeyCode::Backspace => WorktreeAction::InitiateDelete,
+        _ => WorktreeAction::None,
+    }
+}
+
+/// Maps a key event to a confirmation dialog action
+fn map_confirm_delete_key(key: KeyEvent) -> ConfirmDeleteAction {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => ConfirmDeleteAction::Confirm,
+        KeyCode::Char('n') | KeyCode::Esc => ConfirmDeleteAction::Cancel,
+        _ => ConfirmDeleteAction::None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LaunchField {
     Repo,
@@ -596,82 +667,81 @@ impl App {
         }
 
         if self.confirming_delete {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+            match map_confirm_delete_key(key) {
+                ConfirmDeleteAction::Confirm => {
                     self.delete_selected_worktree()?;
                     self.confirming_delete = false;
                     return Ok(true);
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                ConfirmDeleteAction::Cancel => {
                     self.confirming_delete = false;
                     return Ok(true);
                 }
-                _ => return Ok(false),
+                ConfirmDeleteAction::None => return Ok(false),
             }
         }
 
-        match key.code {
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        match map_worktree_key(key) {
+            WorktreeAction::ToggleSidebar => {
                 self.sidebar_open = !self.sidebar_open;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::Refresh => {
                 self.refresh_worktrees()?;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            WorktreeAction::NavigateUp => {
                 if self.selected_worktree > 0 {
                     self.selected_worktree -= 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            WorktreeAction::NavigateDown => {
                 if self.selected_worktree + 1 < self.worktrees.len() {
                     self.selected_worktree += 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('g') => {
+            WorktreeAction::JumpToFirst => {
                 self.selected_worktree = 0;
                 self.prompt_expanded = false;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('G') => {
+            WorktreeAction::JumpToLast => {
                 if !self.worktrees.is_empty() {
                     self.selected_worktree = self.worktrees.len() - 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('d') => {
+            WorktreeAction::ToggleDetails => {
                 self.show_details = !self.show_details;
                 self.sidebar_open = self.show_details;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('e') => {
+            WorktreeAction::TogglePromptExpanded => {
                 self.prompt_expanded = !self.prompt_expanded;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('o') => {
+            WorktreeAction::Open => {
                 self.reopen_selected_worktree()?;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Enter => {
+            WorktreeAction::FocusOrOpen => {
                 let focused = self.focus_selected_worktree()?;
                 if !focused {
                     self.reopen_selected_worktree()?;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('x') | KeyCode::Delete => {
+            WorktreeAction::InitiateDelete => {
                 self.confirming_delete = true;
-                return Ok(true);
+                Ok(true)
             }
-            _ => {}
+            WorktreeAction::None => Ok(false),
         }
-        Ok(false)
     }
 
     fn handle_launch_key(&mut self, key: KeyEvent) -> Result<bool> {
@@ -2485,4 +2555,398 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1]);
 
     vertical[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    /// Helper to create a simple key event without modifiers
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper to create a key event with Ctrl modifier
+    fn ctrl_key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper to create a key event with Shift modifier
+    fn shift_key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    // ==================== Delete Key Tests ====================
+
+    mod delete_keys {
+        use super::*;
+
+        #[test]
+        fn x_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Char('x')));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn delete_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Delete));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn backspace_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Backspace));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn all_delete_keys_produce_same_action() {
+            let x_action = map_worktree_key(key(KeyCode::Char('x')));
+            let delete_action = map_worktree_key(key(KeyCode::Delete));
+            let backspace_action = map_worktree_key(key(KeyCode::Backspace));
+
+            assert_eq!(x_action, delete_action);
+            assert_eq!(delete_action, backspace_action);
+            assert_eq!(x_action, WorktreeAction::InitiateDelete);
+        }
+    }
+
+    // ==================== Navigation Key Tests ====================
+
+    mod navigation_keys {
+        use super::*;
+
+        #[test]
+        fn up_arrow_navigates_up() {
+            let action = map_worktree_key(key(KeyCode::Up));
+            assert_eq!(action, WorktreeAction::NavigateUp);
+        }
+
+        #[test]
+        fn k_key_navigates_up() {
+            let action = map_worktree_key(key(KeyCode::Char('k')));
+            assert_eq!(action, WorktreeAction::NavigateUp);
+        }
+
+        #[test]
+        fn down_arrow_navigates_down() {
+            let action = map_worktree_key(key(KeyCode::Down));
+            assert_eq!(action, WorktreeAction::NavigateDown);
+        }
+
+        #[test]
+        fn j_key_navigates_down() {
+            let action = map_worktree_key(key(KeyCode::Char('j')));
+            assert_eq!(action, WorktreeAction::NavigateDown);
+        }
+
+        #[test]
+        fn g_key_jumps_to_first() {
+            let action = map_worktree_key(key(KeyCode::Char('g')));
+            assert_eq!(action, WorktreeAction::JumpToFirst);
+        }
+
+        #[test]
+        fn shift_g_jumps_to_last() {
+            let action = map_worktree_key(key(KeyCode::Char('G')));
+            assert_eq!(action, WorktreeAction::JumpToLast);
+        }
+
+        #[test]
+        fn vim_navigation_keys_match_arrows() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Up)),
+                map_worktree_key(key(KeyCode::Char('k')))
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Down)),
+                map_worktree_key(key(KeyCode::Char('j')))
+            );
+        }
+    }
+
+    // ==================== Confirmation Dialog Key Tests ====================
+
+    mod confirm_delete_keys {
+        use super::*;
+
+        #[test]
+        fn lowercase_y_confirms() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('y')));
+            assert_eq!(action, ConfirmDeleteAction::Confirm);
+        }
+
+        #[test]
+        fn uppercase_y_confirms() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('Y')));
+            assert_eq!(action, ConfirmDeleteAction::Confirm);
+        }
+
+        #[test]
+        fn lowercase_n_cancels() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('n')));
+            assert_eq!(action, ConfirmDeleteAction::Cancel);
+        }
+
+        #[test]
+        fn escape_cancels() {
+            let action = map_confirm_delete_key(key(KeyCode::Esc));
+            assert_eq!(action, ConfirmDeleteAction::Cancel);
+        }
+
+        #[test]
+        fn other_keys_do_nothing() {
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Char('x'))),
+                ConfirmDeleteAction::None
+            );
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Enter)),
+                ConfirmDeleteAction::None
+            );
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Char('a'))),
+                ConfirmDeleteAction::None
+            );
+        }
+
+        #[test]
+        fn y_and_shift_y_both_confirm() {
+            let lower = map_confirm_delete_key(key(KeyCode::Char('y')));
+            let upper = map_confirm_delete_key(key(KeyCode::Char('Y')));
+            assert_eq!(lower, upper);
+            assert_eq!(lower, ConfirmDeleteAction::Confirm);
+        }
+    }
+
+    // ==================== Action Key Tests ====================
+
+    mod action_keys {
+        use super::*;
+
+        #[test]
+        fn d_toggles_details() {
+            let action = map_worktree_key(key(KeyCode::Char('d')));
+            assert_eq!(action, WorktreeAction::ToggleDetails);
+        }
+
+        #[test]
+        fn e_toggles_prompt_expanded() {
+            let action = map_worktree_key(key(KeyCode::Char('e')));
+            assert_eq!(action, WorktreeAction::TogglePromptExpanded);
+        }
+
+        #[test]
+        fn o_opens_worktree() {
+            let action = map_worktree_key(key(KeyCode::Char('o')));
+            assert_eq!(action, WorktreeAction::Open);
+        }
+
+        #[test]
+        fn enter_focuses_or_opens() {
+            let action = map_worktree_key(key(KeyCode::Enter));
+            assert_eq!(action, WorktreeAction::FocusOrOpen);
+        }
+
+        #[test]
+        fn ctrl_r_refreshes() {
+            let action = map_worktree_key(ctrl_key(KeyCode::Char('r')));
+            assert_eq!(action, WorktreeAction::Refresh);
+        }
+
+        #[test]
+        fn ctrl_p_toggles_sidebar() {
+            let action = map_worktree_key(ctrl_key(KeyCode::Char('p')));
+            assert_eq!(action, WorktreeAction::ToggleSidebar);
+        }
+    }
+
+    // ==================== Unhandled Key Tests ====================
+
+    mod unhandled_keys {
+        use super::*;
+
+        #[test]
+        fn unbound_letters_return_none() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('a'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('b'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('z'))),
+                WorktreeAction::None
+            );
+        }
+
+        #[test]
+        fn numbers_return_none() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('1'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('9'))),
+                WorktreeAction::None
+            );
+        }
+
+        #[test]
+        fn function_keys_return_none() {
+            assert_eq!(map_worktree_key(key(KeyCode::F(1))), WorktreeAction::None);
+            assert_eq!(map_worktree_key(key(KeyCode::F(12))), WorktreeAction::None);
+        }
+
+        #[test]
+        fn regular_r_without_ctrl_returns_none() {
+            let action = map_worktree_key(key(KeyCode::Char('r')));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn regular_p_without_ctrl_returns_none() {
+            let action = map_worktree_key(key(KeyCode::Char('p')));
+            assert_eq!(action, WorktreeAction::None);
+        }
+    }
+
+    // ==================== Modifier Key Tests ====================
+
+    mod modifier_keys {
+        use super::*;
+
+        #[test]
+        fn ctrl_modifier_required_for_refresh() {
+            let with_ctrl = map_worktree_key(ctrl_key(KeyCode::Char('r')));
+            let without_ctrl = map_worktree_key(key(KeyCode::Char('r')));
+
+            assert_eq!(with_ctrl, WorktreeAction::Refresh);
+            assert_eq!(without_ctrl, WorktreeAction::None);
+        }
+
+        #[test]
+        fn ctrl_modifier_required_for_sidebar() {
+            let with_ctrl = map_worktree_key(ctrl_key(KeyCode::Char('p')));
+            let without_ctrl = map_worktree_key(key(KeyCode::Char('p')));
+
+            assert_eq!(with_ctrl, WorktreeAction::ToggleSidebar);
+            assert_eq!(without_ctrl, WorktreeAction::None);
+        }
+
+        #[test]
+        fn shift_does_not_affect_delete_keys() {
+            // x with shift should still be treated as 'X' which is different from 'x'
+            let shifted = map_worktree_key(shift_key(KeyCode::Char('X')));
+            // Capital X is not the same as lowercase x
+            assert_eq!(shifted, WorktreeAction::None);
+        }
+    }
+
+    // ==================== Edge Case Tests ====================
+
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn tab_key_returns_none_in_worktree_action() {
+            // Tab is handled at a higher level for view switching
+            let action = map_worktree_key(key(KeyCode::Tab));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn escape_returns_none_in_worktree_action() {
+            // Escape is handled at a higher level
+            let action = map_worktree_key(key(KeyCode::Esc));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn home_and_end_keys_return_none() {
+            assert_eq!(map_worktree_key(key(KeyCode::Home)), WorktreeAction::None);
+            assert_eq!(map_worktree_key(key(KeyCode::End)), WorktreeAction::None);
+        }
+
+        #[test]
+        fn page_up_and_down_return_none() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::PageUp)),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::PageDown)),
+                WorktreeAction::None
+            );
+        }
+    }
+
+    // ==================== Comprehensive Coverage Tests ====================
+
+    mod comprehensive {
+        use super::*;
+
+        #[test]
+        fn all_worktree_actions_are_reachable() {
+            // Ensure every action variant can be triggered by some key
+            let actions: Vec<WorktreeAction> = vec![
+                map_worktree_key(key(KeyCode::Up)),
+                map_worktree_key(key(KeyCode::Down)),
+                map_worktree_key(key(KeyCode::Char('g'))),
+                map_worktree_key(key(KeyCode::Char('G'))),
+                map_worktree_key(key(KeyCode::Char('d'))),
+                map_worktree_key(key(KeyCode::Char('e'))),
+                map_worktree_key(key(KeyCode::Char('o'))),
+                map_worktree_key(key(KeyCode::Enter)),
+                map_worktree_key(key(KeyCode::Char('x'))),
+                map_worktree_key(ctrl_key(KeyCode::Char('r'))),
+                map_worktree_key(ctrl_key(KeyCode::Char('p'))),
+                map_worktree_key(key(KeyCode::Char('z'))), // Returns None
+            ];
+
+            assert!(actions.contains(&WorktreeAction::NavigateUp));
+            assert!(actions.contains(&WorktreeAction::NavigateDown));
+            assert!(actions.contains(&WorktreeAction::JumpToFirst));
+            assert!(actions.contains(&WorktreeAction::JumpToLast));
+            assert!(actions.contains(&WorktreeAction::ToggleDetails));
+            assert!(actions.contains(&WorktreeAction::TogglePromptExpanded));
+            assert!(actions.contains(&WorktreeAction::Open));
+            assert!(actions.contains(&WorktreeAction::FocusOrOpen));
+            assert!(actions.contains(&WorktreeAction::InitiateDelete));
+            assert!(actions.contains(&WorktreeAction::Refresh));
+            assert!(actions.contains(&WorktreeAction::ToggleSidebar));
+            assert!(actions.contains(&WorktreeAction::None));
+        }
+
+        #[test]
+        fn all_confirm_actions_are_reachable() {
+            let actions: Vec<ConfirmDeleteAction> = vec![
+                map_confirm_delete_key(key(KeyCode::Char('y'))),
+                map_confirm_delete_key(key(KeyCode::Char('n'))),
+                map_confirm_delete_key(key(KeyCode::Char('a'))), // Returns None
+            ];
+
+            assert!(actions.contains(&ConfirmDeleteAction::Confirm));
+            assert!(actions.contains(&ConfirmDeleteAction::Cancel));
+            assert!(actions.contains(&ConfirmDeleteAction::None));
+        }
+    }
 }
