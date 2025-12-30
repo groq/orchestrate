@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
 thiserror = "2.0"
-tui-input = "0.14"
+tui-input = "0.15"
 tui-textarea = "0.7"
 unicode-width = "0.2"
 dirs = "6.0"
