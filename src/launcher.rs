@@ -53,10 +53,7 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
         if !w.is_valid() {
             continue;
         }
-        let mut effective_n = w.get_n();
-        if opts.multiplier > 0 {
-            effective_n = opts.multiplier;
-        }
+        let effective_n = calculate_effective_n(w.n, opts.multiplier);
 
         for _ in 0..effective_n {
             let suffix = util::random_hex(4);
@@ -122,6 +119,18 @@ pub fn launch(opts: Options) -> Result<LaunchResult> {
     })
 }
 
+/// Calculate the effective number of instances to create for a worktree.
+/// If multiplier > 0, it overrides the preset's n value.
+/// If multiplier <= 0, the preset's n value is used (via worktree.get_n()).
+pub fn calculate_effective_n(worktree_n: i64, multiplier: i64) -> i64 {
+    let base_n = if worktree_n <= 0 { 1 } else { worktree_n };
+    if multiplier > 0 {
+        multiplier
+    } else {
+        base_n
+    }
+}
+
 pub fn validate_repo(repo: &str) -> Result<()> {
     if repo.is_empty() {
         return Err(anyhow!("repository is required"));
@@ -184,5 +193,88 @@ mod tests {
     fn validate_prompt_requires_content() {
         assert!(validate_prompt("hi").is_ok());
         assert!(validate_prompt("").is_err());
+    }
+
+    // ==================== Effective N Calculation Tests ====================
+    // These tests verify the multiplier vs preset n logic that determines
+    // how many instances of each worktree agent are created.
+
+    mod effective_n {
+        use super::*;
+
+        #[test]
+        fn multiplier_zero_uses_preset_n() {
+            // When multiplier is 0, the preset's n value should be used.
+            // This is the expected behavior when launching from TUI without override.
+            assert_eq!(calculate_effective_n(3, 0), 3);
+            assert_eq!(calculate_effective_n(5, 0), 5);
+            assert_eq!(calculate_effective_n(1, 0), 1);
+        }
+
+        #[test]
+        fn multiplier_positive_overrides_preset_n() {
+            // When multiplier > 0, it should override the preset's n value.
+            assert_eq!(calculate_effective_n(3, 2), 2);
+            assert_eq!(calculate_effective_n(1, 5), 5);
+            assert_eq!(calculate_effective_n(10, 1), 1);
+        }
+
+        #[test]
+        fn preset_n_zero_or_negative_defaults_to_one() {
+            // When preset n is <= 0, it should default to 1.
+            assert_eq!(calculate_effective_n(0, 0), 1);
+            assert_eq!(calculate_effective_n(-1, 0), 1);
+            assert_eq!(calculate_effective_n(-5, 0), 1);
+        }
+
+        #[test]
+        fn multiplier_overrides_even_invalid_preset_n() {
+            // Multiplier should still work even when preset n is invalid.
+            assert_eq!(calculate_effective_n(0, 3), 3);
+            assert_eq!(calculate_effective_n(-1, 2), 2);
+        }
+
+        #[test]
+        fn negative_multiplier_uses_preset_n() {
+            // Negative multiplier should behave like zero (use preset n).
+            assert_eq!(calculate_effective_n(3, -1), 3);
+            assert_eq!(calculate_effective_n(5, -10), 5);
+        }
+
+        #[test]
+        fn tui_launch_should_use_multiplier_zero() {
+            // This test documents the expected behavior for TUI launches:
+            // TUI should pass multiplier=0 to respect preset n values.
+            //
+            // A preset with n=2 should create 2 instances when launched from TUI.
+            // Previously, TUI hardcoded multiplier=1, which caused this bug.
+            let preset_n = 2;
+            let tui_multiplier = 0; // TUI should pass 0 to respect preset
+            assert_eq!(
+                calculate_effective_n(preset_n, tui_multiplier),
+                2,
+                "TUI launch with multiplier=0 should respect preset n=2"
+            );
+
+            // This was the bug: TUI was passing multiplier=1
+            let buggy_multiplier = 1;
+            assert_eq!(
+                calculate_effective_n(preset_n, buggy_multiplier),
+                1,
+                "multiplier=1 overrides preset n (this was the bug)"
+            );
+        }
+
+        #[test]
+        fn parallel_preset_example() {
+            // Test the "parallel" preset scenario which has multiple worktrees
+            // each with n=2. When launched from TUI, each should create 2 instances.
+            let claude_n = 2;
+            let codex_n = 2;
+            let tui_multiplier = 0;
+
+            assert_eq!(calculate_effective_n(claude_n, tui_multiplier), 2);
+            assert_eq!(calculate_effective_n(codex_n, tui_multiplier), 2);
+        }
     }
 }

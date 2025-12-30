@@ -1,14 +1,9 @@
-mod agents;
-mod config;
-mod git;
-mod launcher;
-mod terminal;
-mod tui;
-mod util;
-
-use crate::config::appsettings;
-use crate::config::preset::{self, Config as PresetConfig};
 use clap::Parser;
+use orchestrate::config::appsettings;
+use orchestrate::config::preset::{self, Config as PresetConfig};
+use orchestrate::launcher;
+use orchestrate::tui;
+use orchestrate::util;
 use std::fs;
 
 #[derive(Parser, Debug)]
@@ -54,6 +49,9 @@ fn main() -> anyhow::Result<()> {
     if !app_settings_path.exists() {
         appsettings::save_app_settings(&data_dir, &app_settings).ok();
     }
+
+    // Ensure default settings.yaml exists (copy from embedded default if missing)
+    preset::ensure_default_settings(&data_dir).ok();
 
     // Load preset config
     let preset_result = preset::load(&data_dir);

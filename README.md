@@ -1,12 +1,10 @@
 <div align="center">
 
-# 🎭 Orchestrate
-
-**Run AI coding agents, custom dev environments, or both — each in their own git worktree**
-
-Now rewritten in **Rust** with a polished **Ratatui** interface.
+<img width="1800" height="628" alt="Orchestrate_Header_1800x628" src="https://github.com/user-attachments/assets/5b04d89e-6342-412a-93fe-cbfb815214b1" />
 
 <br>
+
+### **Initialize, monitor, and orchestrate coding agents running in parallel within isolated git worktrees.**
 
 ![droid](https://img.shields.io/badge/droid-ff8c00?style=for-the-badge&logoColor=white)
 ![claude](https://img.shields.io/badge/claude-d2b48c?style=for-the-badge&logoColor=white)
@@ -14,8 +12,16 @@ Now rewritten in **Rust** with a polished **Ratatui** interface.
 
 </div>
 
-<img width="1408" height="878" alt="Screenshot 2025-12-12 at 5 42 38 AM" src="https://github.com/user-attachments/assets/4a54ba41-422a-4773-a304-8b968a1c0aa8" />
+---
 
+## 📦 Installation
+
+```bash
+# from the repo root
+cargo install --path .
+```
+
+**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
 
 ---
 
@@ -59,14 +65,28 @@ presets:
       n: 3
 ```
 
-**2. Run with a GitHub repo:**
+**2. Option A: Run via TUI**
+
+```bash
+# Open TUI
+orchestrate
+```
+
+<img width="1252" height="849" alt="Screenshot 2025-12-30 at 2 32 02 PM" src="https://github.com/user-attachments/assets/29155db0-6043-454c-9843-ff97dcd19f58" />
+
+<img width="1255" height="840" alt="Screenshot 2025-12-30 at 2 32 39 PM" src="https://github.com/user-attachments/assets/afceac54-011c-41e8-a9ef-09eecd5c8c37" />
+
+<br>
+<br>
+
+**3. Option B: Run via CLI:**
 
 ```bash
 # Use default preset
-orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue"
+orchestrate --repo groq/openbench --name fix-bug --prompt "Create a new eval that implements a subset of SimpleQA"
 
 # Or use the fullstack preset
-orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue" --preset fullstack
+orchestrate --repo groq/openbench --name fix-bug --prompt "Create a new eval that implements a subset of SimpleQA" --preset fullstack
 ```
 
 This clones/updates the repo from the main branch, creates isolated git worktrees, and launches agents/commands in separate iTerm2 panes.
@@ -78,17 +98,6 @@ This clones/updates the repo from the main branch, creates isolated git worktree
 📦 **Clones/updates repo** → 📁 **Creates worktrees** → 🖥️ **Opens iTerm2 panes** → 🤖 **Launches agents** → ✨ **Parallel coding**
 
 </div>
-
----
-
-## 📦 Installation
-
-```bash
-# from the repo root
-cargo install --path .
-```
-
-**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
 
 ---
 
@@ -208,7 +217,7 @@ track npm test
 track ./bin/dev-server
 ```
 
-`track` pipes stdout/stderr to the worktree’s activity log (e.g. `~/.orchestrate/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
+`track` pipes stdout/stderr to the worktree's activity log (e.g. `~/.orchestrate/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
 
 ---
 
@@ -276,45 +285,13 @@ Inside this directory:
 - `repos/` — Cloned repositories
 - `worktrees/` — Git worktrees for agent sessions
 
-**Example Output:**
-
-```
-⚙️  Settings: ~/.orchestrate/settings.yaml
-📦 Repo: groq/openbench
-🔄 Fetching latest from main branch...
-📂 Local path: ~/.orchestrate/repos/groq-openbench
-🌿 Base branch: main
-💬 Prompt: Fix the authentication bug
-✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: codex)
-   🖥️  Command: App (branch: fix-auth-a3f2)
-   🖥️  Command: Terminal (branch: fix-auth-a3f2)
-
-✨ Started 3 session(s) in 1 window(s)!
-```
-
----
-
-## 📁 Project Structure
-
-```
-orchestrate/
-├── Cargo.toml        # Rust package manifest
-├── src/
-│   ├── main.rs       # CLI entry point (ui flag launches TUI)
-│   ├── util.rs       # Data dir helpers, random hex, path display
-│   ├── agents.rs     # Agent colors and helpers
-│   ├── git.rs        # Git worktree and status helpers
-│   ├── terminal.rs   # iTerm2 AppleScript/session grid logic
-│   ├── launcher.rs   # Worktree creation + session launching
-│   ├── config/       # settings.yaml + orchestrate.yaml + session metadata
-│   └── tui/          # Ratatui-driven UI (worktrees, launch form, settings)
-```
-
 ---
 
 ## 🙏 Acknowledgments
 
-The terminal UI is heavily inspired by and borrows design patterns from [**gh-dash**](https://github.com/dlvhdr/gh-dash) by [@dlvhdr](https://github.com/dlvhdr) — a beautiful GitHub CLI dashboard. Thank you for the excellent reference implementation!
+This app was developed by Benjamin Klieger at [Groq](https://groq.com).
+
+The terminal UI is inspired by and borrows design patterns from [**gh-dash**](https://github.com/dlvhdr/gh-dash) by [@dlvhdr](https://github.com/dlvhdr) — an impressive GitHub CLI dashboard. Please check it out!
 
 ---
 

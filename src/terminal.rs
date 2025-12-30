@@ -150,7 +150,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
     if let Some(log) = &session.activity_log {
         let escaped_log = shell_escape(log);
         let track_fn = format!(
-            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
+            "track(){{ LOG=\"{log}\"; mkdir -p \"$(dirname \"$LOG\")\"; touch \"$LOG\"; if [ $# -eq 0 ]; then echo \"usage: track <command...>\" | tee -a \"$LOG\"; return 1; fi; script -q -a \"$LOG\" \"$@\"; }}",
             log = escaped_log
         );
         cmd_parts.push(track_fn);
@@ -165,7 +165,7 @@ fn build_agent_command(session: &SessionInfo, prompt: &str) -> String {
         if let Some(log) = &session.activity_log {
             let escaped_log = shell_escape(log);
             cmd_parts.push(format!(
-                "LOG=\"{}\"; mkdir -p \"$(dirname \\\"$LOG\\\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
+                "LOG=\"{}\"; mkdir -p \"$(dirname \"$LOG\")\"; touch \"$LOG\"; script -q -a \"$LOG\" {} '{}'",
                 escaped_log, agent, escaped_prompt
             ));
         } else {
@@ -283,6 +283,12 @@ fn build_window_script(chunk: &[SessionInfo], prompt: &str) -> String {
 }
 
 fn run_osascript(script: &str) -> Result<()> {
+    // In test mode, skip actual osascript execution to allow E2E testing
+    // without spawning real iTerm2 windows.
+    if std::env::var("ORCHESTRATE_TEST_MODE").is_ok() {
+        return Ok(());
+    }
+
     let output = Command::new("osascript")
         .arg("-e")
         .arg(script)

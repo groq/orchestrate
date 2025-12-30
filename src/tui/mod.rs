@@ -22,7 +22,7 @@ use ratatui::widgets::{
 };
 use ratatui::Terminal;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 type Frame<'a> = ratatui::Frame<'a>;
@@ -43,6 +43,41 @@ const HEADER_BG: Color = Color::Rgb(30, 28, 25); // Header background
 const SUCCESS_COLOR: Color = Color::Rgb(100, 220, 150); // Green for additions
 const ERROR_COLOR: Color = Color::Rgb(240, 100, 100); // Red for deletions/errors
 const WARNING_COLOR: Color = Color::Rgb(240, 180, 80); // Yellow for warnings
+
+/// Build launcher options from TUI form data.
+/// This function is extracted for testability - it ensures the TUI passes
+/// the correct multiplier value (0) to respect preset n values.
+fn build_launch_options(
+    repo: &str,
+    name: &str,
+    prompt: &str,
+    preset_name: &str,
+    preset_config: Option<&PresetConfig>,
+    data_dir: &Path,
+    maximize_on_launch: bool,
+) -> launcher::Options {
+    let preset = preset_config
+        .and_then(|cfg| preset::get_preset(cfg, preset_name))
+        .unwrap_or_else(|| {
+            vec![preset::Worktree {
+                agent: "claude".to_string(),
+                n: 1,
+                commands: vec![],
+            }]
+        });
+    launcher::Options {
+        repo: repo.to_string(),
+        name: name.to_string(),
+        prompt: prompt.to_string(),
+        preset_name: preset_name.to_string(),
+        // IMPORTANT: multiplier must be 0 to respect preset n values.
+        // If multiplier > 0, it overrides all preset n values.
+        multiplier: 0,
+        data_dir: data_dir.to_path_buf(),
+        preset,
+        maximize_on_launch,
+    }
+}
 
 pub fn run(
     data_dir: PathBuf,
@@ -114,6 +149,77 @@ enum View {
     Launch,
     Settings,
     Presets,
+}
+
+/// Actions that can be triggered from the worktrees view
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorktreeAction {
+    /// Navigate up in the list
+    NavigateUp,
+    /// Navigate down in the list
+    NavigateDown,
+    /// Jump to the first item
+    JumpToFirst,
+    /// Jump to the last item
+    JumpToLast,
+    /// Toggle details sidebar
+    ToggleDetails,
+    /// Expand/collapse prompt
+    TogglePromptExpanded,
+    /// Open/reopen the selected worktree
+    Open,
+    /// Focus or reopen the selected worktree
+    FocusOrOpen,
+    /// Initiate delete (shows confirmation)
+    InitiateDelete,
+    /// Refresh the worktree list
+    Refresh,
+    /// Toggle sidebar
+    ToggleSidebar,
+    /// No action for this key
+    None,
+}
+
+/// Actions for the delete confirmation dialog
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfirmDeleteAction {
+    /// Confirm deletion
+    Confirm,
+    /// Cancel deletion
+    Cancel,
+    /// No action (key not handled)
+    None,
+}
+
+/// Maps a key event to a worktree action (when not in confirmation dialog)
+fn map_worktree_key(key: KeyEvent) -> WorktreeAction {
+    match key.code {
+        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::ToggleSidebar
+        }
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::Refresh
+        }
+        KeyCode::Up | KeyCode::Char('k') => WorktreeAction::NavigateUp,
+        KeyCode::Down | KeyCode::Char('j') => WorktreeAction::NavigateDown,
+        KeyCode::Char('g') => WorktreeAction::JumpToFirst,
+        KeyCode::Char('G') => WorktreeAction::JumpToLast,
+        KeyCode::Char('d') => WorktreeAction::ToggleDetails,
+        KeyCode::Char('e') => WorktreeAction::TogglePromptExpanded,
+        KeyCode::Char('o') => WorktreeAction::Open,
+        KeyCode::Enter => WorktreeAction::FocusOrOpen,
+        KeyCode::Char('x') | KeyCode::Delete | KeyCode::Backspace => WorktreeAction::InitiateDelete,
+        _ => WorktreeAction::None,
+    }
+}
+
+/// Maps a key event to a confirmation dialog action
+fn map_confirm_delete_key(key: KeyEvent) -> ConfirmDeleteAction {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => ConfirmDeleteAction::Confirm,
+        KeyCode::Char('n') | KeyCode::Esc => ConfirmDeleteAction::Cancel,
+        _ => ConfirmDeleteAction::None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -293,8 +399,8 @@ fn clean_log_line(line: String) -> String {
         }
         cleaned.push(ch);
     }
-    if cleaned.len() > 180 {
-        cleaned.truncate(177);
+    if cleaned.chars().count() > 180 {
+        cleaned = cleaned.chars().take(177).collect();
         cleaned.push('…');
     }
     cleaned
@@ -596,82 +702,81 @@ impl App {
         }
 
         if self.confirming_delete {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+            match map_confirm_delete_key(key) {
+                ConfirmDeleteAction::Confirm => {
                     self.delete_selected_worktree()?;
                     self.confirming_delete = false;
                     return Ok(true);
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                ConfirmDeleteAction::Cancel => {
                     self.confirming_delete = false;
                     return Ok(true);
                 }
-                _ => return Ok(false),
+                ConfirmDeleteAction::None => return Ok(false),
             }
         }
 
-        match key.code {
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        match map_worktree_key(key) {
+            WorktreeAction::ToggleSidebar => {
                 self.sidebar_open = !self.sidebar_open;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            WorktreeAction::Refresh => {
                 self.refresh_worktrees()?;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            WorktreeAction::NavigateUp => {
                 if self.selected_worktree > 0 {
                     self.selected_worktree -= 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            WorktreeAction::NavigateDown => {
                 if self.selected_worktree + 1 < self.worktrees.len() {
                     self.selected_worktree += 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('g') => {
+            WorktreeAction::JumpToFirst => {
                 self.selected_worktree = 0;
                 self.prompt_expanded = false;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('G') => {
+            WorktreeAction::JumpToLast => {
                 if !self.worktrees.is_empty() {
                     self.selected_worktree = self.worktrees.len() - 1;
                     self.prompt_expanded = false;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('d') => {
+            WorktreeAction::ToggleDetails => {
                 self.show_details = !self.show_details;
                 self.sidebar_open = self.show_details;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('e') => {
+            WorktreeAction::TogglePromptExpanded => {
                 self.prompt_expanded = !self.prompt_expanded;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('o') => {
+            WorktreeAction::Open => {
                 self.reopen_selected_worktree()?;
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Enter => {
+            WorktreeAction::FocusOrOpen => {
                 let focused = self.focus_selected_worktree()?;
                 if !focused {
                     self.reopen_selected_worktree()?;
                 }
-                return Ok(true);
+                Ok(true)
             }
-            KeyCode::Char('x') | KeyCode::Delete => {
+            WorktreeAction::InitiateDelete => {
                 self.confirming_delete = true;
-                return Ok(true);
+                Ok(true)
             }
-            _ => {}
+            WorktreeAction::None => Ok(false),
         }
-        Ok(false)
     }
 
     fn handle_launch_key(&mut self, key: KeyEvent) -> Result<bool> {
@@ -872,27 +977,15 @@ impl App {
 
     fn submit_launch_form(&mut self) -> Result<()> {
         if let Some((repo, name, prompt, preset_name)) = self.launch_form.submit() {
-            let preset = self
-                .preset_config
-                .as_ref()
-                .and_then(|cfg| preset::get_preset(cfg, &preset_name))
-                .unwrap_or_else(|| {
-                    vec![preset::Worktree {
-                        agent: "claude".to_string(),
-                        n: 1,
-                        commands: vec![],
-                    }]
-                });
-            let opts = launcher::Options {
-                repo: repo.clone(),
-                name: name.clone(),
-                prompt: prompt.clone(),
-                preset_name: preset_name.clone(),
-                multiplier: 1,
-                data_dir: self.data_dir.clone(),
-                preset,
-                maximize_on_launch: self.app_settings.terminal.maximize_on_launch,
-            };
+            let opts = build_launch_options(
+                &repo,
+                &name,
+                &prompt,
+                &preset_name,
+                self.preset_config.as_ref(),
+                &self.data_dir,
+                self.app_settings.terminal.maximize_on_launch,
+            );
             match launcher::launch(opts) {
                 Ok(res) => {
                     self.set_status(
@@ -1332,8 +1425,8 @@ impl App {
             .unwrap_or_else(|| "—".to_string());
         if prompt_preview.is_empty() {
             prompt_preview = "—".to_string();
-        } else if !self.prompt_expanded && prompt_preview.len() > 140 {
-            prompt_preview.truncate(140);
+        } else if !self.prompt_expanded && prompt_preview.chars().count() > 140 {
+            prompt_preview = prompt_preview.chars().take(140).collect();
             prompt_preview.push_str("… ");
         }
 
@@ -1904,15 +1997,11 @@ impl App {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(if btn_focused {
-                Style::default().fg(ACCENT)
+                Style::default().fg(ACCENT).bg(SURFACE_BG)
             } else {
-                Style::default().fg(LIGHT_BORDER)
+                Style::default().fg(LIGHT_BORDER).bg(SURFACE_BG)
             })
-            .style(Style::default().bg(if btn_focused {
-                ACCENT_HIGHLIGHT_BG
-            } else {
-                SURFACE_BG
-            }));
+            .style(Style::default().bg(SURFACE_BG));
         let btn = Paragraph::new(Span::styled(
             "Launch Session",
             Style::default()
@@ -1953,15 +2042,11 @@ impl App {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(if focused {
-                Style::default().fg(ACCENT)
+                Style::default().fg(ACCENT).bg(SURFACE_BG)
             } else {
-                Style::default().fg(LIGHT_BORDER)
+                Style::default().fg(LIGHT_BORDER).bg(SURFACE_BG)
             })
-            .style(Style::default().bg(if focused {
-                ACCENT_HIGHLIGHT_BG
-            } else {
-                SURFACE_BG
-            }))
+            .style(Style::default().bg(SURFACE_BG))
             .title(Span::styled(
                 format!(" {} ", label),
                 Style::default().fg(if focused { ACCENT } else { DIM_TEXT }),
@@ -2120,15 +2205,93 @@ impl App {
     }
 
     fn draw_presets(&self, f: &mut Frame, area: Rect) {
-        // Center the presets panel
+        // Layout: left sidebar for instructions, right panel for presets
         let outer = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(20),
-                Constraint::Percentage(60),
-                Constraint::Percentage(20),
+                Constraint::Percentage(5),
+                Constraint::Percentage(35),
+                Constraint::Percentage(55),
+                Constraint::Percentage(5),
             ])
             .split(area);
+
+        let settings_path = util::display_path(self.data_dir.join("settings.yaml"));
+
+        // Left sidebar with instructions
+        let instructions = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Config Location",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                settings_path.clone(),
+                Style::default().fg(ACCENT),
+            )),
+            Line::from(""),
+            Line::from(Span::styled("Example:", Style::default().fg(Color::White))),
+            Line::from(""),
+            Line::from(Span::styled("presets:", Style::default().fg(ACCENT))),
+            Line::from(Span::styled("  my-preset:", Style::default().fg(ACCENT))),
+            Line::from(Span::styled(
+                "    - agent: claude",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "      n: 2",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "      commands:",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "        - command: \"\"",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(Span::styled(
+                "        - command: npm run dev",
+                Style::default().fg(Color::Rgb(150, 150, 160)),
+            )),
+            Line::from(""),
+            Line::from(Span::styled("Fields:", Style::default().fg(Color::White))),
+            Line::from(Span::styled(
+                "• agent: claude, codex, etc.",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "• n: number of instances",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "• commands: extra terminal panes",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "  in the same worktree",
+                Style::default().fg(DIM_TEXT),
+            )),
+            Line::from(Span::styled(
+                "  \"\" = blank, or specify a cmd",
+                Style::default().fg(DIM_TEXT),
+            )),
+        ])
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(LIGHT_BORDER))
+                .style(Style::default().bg(SURFACE_BG))
+                .title(Span::styled(
+                    " Guide ",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                )),
+        );
+        f.render_widget(instructions, outer[1]);
 
         if let Some(cfg) = &self.preset_config {
             let mut items = Vec::new();
@@ -2156,7 +2319,7 @@ impl App {
                     for cmd in &wt.commands {
                         let title = cmd.display_title();
                         lines.push(Line::from(vec![
-                            Span::styled("       -> ", Style::default().fg(DIM_TEXT)),
+                            Span::styled("       + ", Style::default().fg(DIM_TEXT)),
                             Span::styled(title, Style::default().fg(Color::Rgb(150, 150, 160))),
                         ]));
                     }
@@ -2177,7 +2340,7 @@ impl App {
                         )),
                 )
                 .highlight_style(Style::default().fg(ACCENT));
-            f.render_widget(list, outer[1]);
+            f.render_widget(list, outer[2]);
         } else {
             let empty_msg = Paragraph::new(vec![
                 Line::from(""),
@@ -2189,7 +2352,7 @@ impl App {
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "Create a settings.yaml file in your data directory",
+                    format!("Edit {}", settings_path),
                     Style::default().fg(DIM_TEXT),
                 )),
                 Line::from(Span::styled(
@@ -2209,7 +2372,7 @@ impl App {
                         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                     )),
             );
-            f.render_widget(empty_msg, outer[1]);
+            f.render_widget(empty_msg, outer[2]);
         }
     }
 
@@ -2485,4 +2648,628 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1]);
 
     vertical[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    /// Helper to create a simple key event without modifiers
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper to create a key event with Ctrl modifier
+    fn ctrl_key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Helper to create a key event with Shift modifier
+    fn shift_key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    // ==================== Delete Key Tests ====================
+
+    mod delete_keys {
+        use super::*;
+
+        #[test]
+        fn x_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Char('x')));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn delete_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Delete));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn backspace_key_initiates_delete() {
+            let action = map_worktree_key(key(KeyCode::Backspace));
+            assert_eq!(action, WorktreeAction::InitiateDelete);
+        }
+
+        #[test]
+        fn all_delete_keys_produce_same_action() {
+            let x_action = map_worktree_key(key(KeyCode::Char('x')));
+            let delete_action = map_worktree_key(key(KeyCode::Delete));
+            let backspace_action = map_worktree_key(key(KeyCode::Backspace));
+
+            assert_eq!(x_action, delete_action);
+            assert_eq!(delete_action, backspace_action);
+            assert_eq!(x_action, WorktreeAction::InitiateDelete);
+        }
+    }
+
+    // ==================== Navigation Key Tests ====================
+
+    mod navigation_keys {
+        use super::*;
+
+        #[test]
+        fn up_arrow_navigates_up() {
+            let action = map_worktree_key(key(KeyCode::Up));
+            assert_eq!(action, WorktreeAction::NavigateUp);
+        }
+
+        #[test]
+        fn k_key_navigates_up() {
+            let action = map_worktree_key(key(KeyCode::Char('k')));
+            assert_eq!(action, WorktreeAction::NavigateUp);
+        }
+
+        #[test]
+        fn down_arrow_navigates_down() {
+            let action = map_worktree_key(key(KeyCode::Down));
+            assert_eq!(action, WorktreeAction::NavigateDown);
+        }
+
+        #[test]
+        fn j_key_navigates_down() {
+            let action = map_worktree_key(key(KeyCode::Char('j')));
+            assert_eq!(action, WorktreeAction::NavigateDown);
+        }
+
+        #[test]
+        fn g_key_jumps_to_first() {
+            let action = map_worktree_key(key(KeyCode::Char('g')));
+            assert_eq!(action, WorktreeAction::JumpToFirst);
+        }
+
+        #[test]
+        fn shift_g_jumps_to_last() {
+            let action = map_worktree_key(key(KeyCode::Char('G')));
+            assert_eq!(action, WorktreeAction::JumpToLast);
+        }
+
+        #[test]
+        fn vim_navigation_keys_match_arrows() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Up)),
+                map_worktree_key(key(KeyCode::Char('k')))
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Down)),
+                map_worktree_key(key(KeyCode::Char('j')))
+            );
+        }
+    }
+
+    // ==================== Confirmation Dialog Key Tests ====================
+
+    mod confirm_delete_keys {
+        use super::*;
+
+        #[test]
+        fn lowercase_y_confirms() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('y')));
+            assert_eq!(action, ConfirmDeleteAction::Confirm);
+        }
+
+        #[test]
+        fn uppercase_y_confirms() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('Y')));
+            assert_eq!(action, ConfirmDeleteAction::Confirm);
+        }
+
+        #[test]
+        fn lowercase_n_cancels() {
+            let action = map_confirm_delete_key(key(KeyCode::Char('n')));
+            assert_eq!(action, ConfirmDeleteAction::Cancel);
+        }
+
+        #[test]
+        fn escape_cancels() {
+            let action = map_confirm_delete_key(key(KeyCode::Esc));
+            assert_eq!(action, ConfirmDeleteAction::Cancel);
+        }
+
+        #[test]
+        fn other_keys_do_nothing() {
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Char('x'))),
+                ConfirmDeleteAction::None
+            );
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Enter)),
+                ConfirmDeleteAction::None
+            );
+            assert_eq!(
+                map_confirm_delete_key(key(KeyCode::Char('a'))),
+                ConfirmDeleteAction::None
+            );
+        }
+
+        #[test]
+        fn y_and_shift_y_both_confirm() {
+            let lower = map_confirm_delete_key(key(KeyCode::Char('y')));
+            let upper = map_confirm_delete_key(key(KeyCode::Char('Y')));
+            assert_eq!(lower, upper);
+            assert_eq!(lower, ConfirmDeleteAction::Confirm);
+        }
+    }
+
+    // ==================== Action Key Tests ====================
+
+    mod action_keys {
+        use super::*;
+
+        #[test]
+        fn d_toggles_details() {
+            let action = map_worktree_key(key(KeyCode::Char('d')));
+            assert_eq!(action, WorktreeAction::ToggleDetails);
+        }
+
+        #[test]
+        fn e_toggles_prompt_expanded() {
+            let action = map_worktree_key(key(KeyCode::Char('e')));
+            assert_eq!(action, WorktreeAction::TogglePromptExpanded);
+        }
+
+        #[test]
+        fn o_opens_worktree() {
+            let action = map_worktree_key(key(KeyCode::Char('o')));
+            assert_eq!(action, WorktreeAction::Open);
+        }
+
+        #[test]
+        fn enter_focuses_or_opens() {
+            let action = map_worktree_key(key(KeyCode::Enter));
+            assert_eq!(action, WorktreeAction::FocusOrOpen);
+        }
+
+        #[test]
+        fn ctrl_r_refreshes() {
+            let action = map_worktree_key(ctrl_key(KeyCode::Char('r')));
+            assert_eq!(action, WorktreeAction::Refresh);
+        }
+
+        #[test]
+        fn ctrl_p_toggles_sidebar() {
+            let action = map_worktree_key(ctrl_key(KeyCode::Char('p')));
+            assert_eq!(action, WorktreeAction::ToggleSidebar);
+        }
+    }
+
+    // ==================== Unhandled Key Tests ====================
+
+    mod unhandled_keys {
+        use super::*;
+
+        #[test]
+        fn unbound_letters_return_none() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('a'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('b'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('z'))),
+                WorktreeAction::None
+            );
+        }
+
+        #[test]
+        fn numbers_return_none() {
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('1'))),
+                WorktreeAction::None
+            );
+            assert_eq!(
+                map_worktree_key(key(KeyCode::Char('9'))),
+                WorktreeAction::None
+            );
+        }
+
+        #[test]
+        fn function_keys_return_none() {
+            assert_eq!(map_worktree_key(key(KeyCode::F(1))), WorktreeAction::None);
+            assert_eq!(map_worktree_key(key(KeyCode::F(12))), WorktreeAction::None);
+        }
+
+        #[test]
+        fn regular_r_without_ctrl_returns_none() {
+            let action = map_worktree_key(key(KeyCode::Char('r')));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn regular_p_without_ctrl_returns_none() {
+            let action = map_worktree_key(key(KeyCode::Char('p')));
+            assert_eq!(action, WorktreeAction::None);
+        }
+    }
+
+    // ==================== Modifier Key Tests ====================
+
+    mod modifier_keys {
+        use super::*;
+
+        #[test]
+        fn ctrl_modifier_required_for_refresh() {
+            let with_ctrl = map_worktree_key(ctrl_key(KeyCode::Char('r')));
+            let without_ctrl = map_worktree_key(key(KeyCode::Char('r')));
+
+            assert_eq!(with_ctrl, WorktreeAction::Refresh);
+            assert_eq!(without_ctrl, WorktreeAction::None);
+        }
+
+        #[test]
+        fn ctrl_modifier_required_for_sidebar() {
+            let with_ctrl = map_worktree_key(ctrl_key(KeyCode::Char('p')));
+            let without_ctrl = map_worktree_key(key(KeyCode::Char('p')));
+
+            assert_eq!(with_ctrl, WorktreeAction::ToggleSidebar);
+            assert_eq!(without_ctrl, WorktreeAction::None);
+        }
+
+        #[test]
+        fn shift_does_not_affect_delete_keys() {
+            // x with shift should still be treated as 'X' which is different from 'x'
+            let shifted = map_worktree_key(shift_key(KeyCode::Char('X')));
+            // Capital X is not the same as lowercase x
+            assert_eq!(shifted, WorktreeAction::None);
+        }
+    }
+
+    // ==================== Edge Case Tests ====================
+
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn tab_key_returns_none_in_worktree_action() {
+            // Tab is handled at a higher level for view switching
+            let action = map_worktree_key(key(KeyCode::Tab));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn escape_returns_none_in_worktree_action() {
+            // Escape is handled at a higher level
+            let action = map_worktree_key(key(KeyCode::Esc));
+            assert_eq!(action, WorktreeAction::None);
+        }
+
+        #[test]
+        fn home_and_end_keys_return_none() {
+            assert_eq!(map_worktree_key(key(KeyCode::Home)), WorktreeAction::None);
+            assert_eq!(map_worktree_key(key(KeyCode::End)), WorktreeAction::None);
+        }
+
+        #[test]
+        fn page_up_and_down_return_none() {
+            assert_eq!(map_worktree_key(key(KeyCode::PageUp)), WorktreeAction::None);
+            assert_eq!(
+                map_worktree_key(key(KeyCode::PageDown)),
+                WorktreeAction::None
+            );
+        }
+    }
+
+    // ==================== Comprehensive Coverage Tests ====================
+
+    mod comprehensive {
+        use super::*;
+
+        #[test]
+        fn all_worktree_actions_are_reachable() {
+            // Ensure every action variant can be triggered by some key
+            let actions: Vec<WorktreeAction> = vec![
+                map_worktree_key(key(KeyCode::Up)),
+                map_worktree_key(key(KeyCode::Down)),
+                map_worktree_key(key(KeyCode::Char('g'))),
+                map_worktree_key(key(KeyCode::Char('G'))),
+                map_worktree_key(key(KeyCode::Char('d'))),
+                map_worktree_key(key(KeyCode::Char('e'))),
+                map_worktree_key(key(KeyCode::Char('o'))),
+                map_worktree_key(key(KeyCode::Enter)),
+                map_worktree_key(key(KeyCode::Char('x'))),
+                map_worktree_key(ctrl_key(KeyCode::Char('r'))),
+                map_worktree_key(ctrl_key(KeyCode::Char('p'))),
+                map_worktree_key(key(KeyCode::Char('z'))), // Returns None
+            ];
+
+            assert!(actions.contains(&WorktreeAction::NavigateUp));
+            assert!(actions.contains(&WorktreeAction::NavigateDown));
+            assert!(actions.contains(&WorktreeAction::JumpToFirst));
+            assert!(actions.contains(&WorktreeAction::JumpToLast));
+            assert!(actions.contains(&WorktreeAction::ToggleDetails));
+            assert!(actions.contains(&WorktreeAction::TogglePromptExpanded));
+            assert!(actions.contains(&WorktreeAction::Open));
+            assert!(actions.contains(&WorktreeAction::FocusOrOpen));
+            assert!(actions.contains(&WorktreeAction::InitiateDelete));
+            assert!(actions.contains(&WorktreeAction::Refresh));
+            assert!(actions.contains(&WorktreeAction::ToggleSidebar));
+            assert!(actions.contains(&WorktreeAction::None));
+        }
+
+        #[test]
+        fn all_confirm_actions_are_reachable() {
+            let actions: Vec<ConfirmDeleteAction> = vec![
+                map_confirm_delete_key(key(KeyCode::Char('y'))),
+                map_confirm_delete_key(key(KeyCode::Char('n'))),
+                map_confirm_delete_key(key(KeyCode::Char('a'))), // Returns None
+            ];
+
+            assert!(actions.contains(&ConfirmDeleteAction::Confirm));
+            assert!(actions.contains(&ConfirmDeleteAction::Cancel));
+            assert!(actions.contains(&ConfirmDeleteAction::None));
+        }
+    }
+
+    // ==================== Launch Options Integration Tests ====================
+    // These tests verify that the TUI correctly builds launcher options,
+    // particularly that multiplier=0 is passed to respect preset n values.
+
+    mod launch_options {
+        use super::*;
+        use crate::config::preset::{Config as PresetConfig, Worktree};
+        use crate::launcher;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        fn create_test_preset_config() -> PresetConfig {
+            let mut presets = HashMap::new();
+
+            // Single agent preset with n=1
+            presets.insert(
+                "claude".to_string(),
+                vec![Worktree {
+                    agent: "claude".to_string(),
+                    n: 1,
+                    commands: vec![],
+                }],
+            );
+
+            // Parallel preset with n=2 for each agent
+            presets.insert(
+                "parallel".to_string(),
+                vec![
+                    Worktree {
+                        agent: "claude".to_string(),
+                        n: 2,
+                        commands: vec![],
+                    },
+                    Worktree {
+                        agent: "codex".to_string(),
+                        n: 2,
+                        commands: vec![],
+                    },
+                ],
+            );
+
+            // High n preset for stress testing
+            presets.insert(
+                "many".to_string(),
+                vec![Worktree {
+                    agent: "claude".to_string(),
+                    n: 5,
+                    commands: vec![],
+                }],
+            );
+
+            PresetConfig {
+                default: "claude".to_string(),
+                presets,
+            }
+        }
+
+        #[test]
+        fn build_launch_options_sets_multiplier_to_zero() {
+            // This test would have caught the original bug where multiplier was hardcoded to 1
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(
+                opts.multiplier, 0,
+                "TUI must pass multiplier=0 to respect preset n values"
+            );
+        }
+
+        #[test]
+        fn build_launch_options_preserves_preset_n_values() {
+            // Verify that preset n values are preserved in the options
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(
+                opts.preset.len(),
+                2,
+                "parallel preset should have 2 worktrees"
+            );
+            assert_eq!(opts.preset[0].n, 2, "first worktree should have n=2");
+            assert_eq!(opts.preset[1].n, 2, "second worktree should have n=2");
+        }
+
+        #[test]
+        fn build_launch_options_with_high_n_preset() {
+            // Verify high n values are preserved
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "many",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].n, 5, "preset n=5 should be preserved");
+        }
+
+        #[test]
+        fn build_launch_options_unknown_preset_uses_default() {
+            // When preset is not found, should use default single claude agent
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "nonexistent",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].agent, "claude");
+            assert_eq!(opts.preset[0].n, 1);
+        }
+
+        #[test]
+        fn build_launch_options_no_preset_config() {
+            // When no preset config exists, should use default
+            let data_dir = PathBuf::from("/tmp/test");
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "any",
+                None,
+                &data_dir,
+                false,
+            );
+
+            assert_eq!(opts.multiplier, 0);
+            assert_eq!(opts.preset.len(), 1);
+            assert_eq!(opts.preset[0].agent, "claude");
+        }
+
+        #[test]
+        fn effective_n_respects_preset_when_multiplier_zero() {
+            // End-to-end test: verify that with multiplier=0, the preset n values
+            // are what determine how many instances get created.
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            // Calculate what the launcher would do with these options
+            for worktree in &opts.preset {
+                let effective_n = launcher::calculate_effective_n(worktree.n, opts.multiplier);
+                assert_eq!(
+                    effective_n, worktree.n,
+                    "With multiplier=0, effective_n should equal preset n ({})",
+                    worktree.n
+                );
+            }
+        }
+
+        #[test]
+        fn regression_test_multiplier_was_not_one() {
+            // This test explicitly documents and catches the bug where
+            // multiplier was incorrectly set to 1 instead of 0.
+            let data_dir = PathBuf::from("/tmp/test");
+            let preset_config = create_test_preset_config();
+
+            let opts = build_launch_options(
+                "owner/repo",
+                "test-branch",
+                "test prompt",
+                "parallel",
+                Some(&preset_config),
+                &data_dir,
+                false,
+            );
+
+            // The bug: multiplier was 1, which overrode all preset n values to 1
+            assert_ne!(
+                opts.multiplier, 1,
+                "REGRESSION: multiplier must NOT be 1 (this overrides preset n values)"
+            );
+
+            // Verify the fix: multiplier should be 0
+            assert_eq!(
+                opts.multiplier, 0,
+                "multiplier must be 0 to respect preset n values"
+            );
+
+            // Verify that with our options, a preset with n=2 would create 2 instances
+            let effective_n = launcher::calculate_effective_n(2, opts.multiplier);
+            assert_eq!(
+                effective_n, 2,
+                "preset with n=2 should create 2 instances, not 1"
+            );
+        }
+    }
 }

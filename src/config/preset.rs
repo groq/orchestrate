@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Default settings.yaml content embedded at compile time
+pub const DEFAULT_SETTINGS: &str = include_str!("defaults/settings.yaml");
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Command {
     #[serde(default)]
@@ -40,6 +43,8 @@ pub struct Worktree {
 }
 
 impl Worktree {
+    /// Get the effective n value, defaulting to 1 if n <= 0.
+    #[allow(dead_code)]
     pub fn get_n(&self) -> i64 {
         if self.n <= 0 {
             1
@@ -70,6 +75,18 @@ pub struct LoadResult {
     pub config: Option<Config>,
     pub path: Option<PathBuf>,
     pub error: Option<String>,
+}
+
+/// Copy the default settings.yaml to the data directory if it doesn't exist.
+/// Returns Ok(true) if the file was created, Ok(false) if it already existed.
+pub fn ensure_default_settings(dir: &Path) -> std::io::Result<bool> {
+    let path = dir.join(SETTINGS_FILE_NAME);
+    if path.exists() {
+        return Ok(false);
+    }
+    fs::create_dir_all(dir)?;
+    fs::write(&path, DEFAULT_SETTINGS)?;
+    Ok(true)
 }
 
 pub fn load(dir: &Path) -> LoadResult {
