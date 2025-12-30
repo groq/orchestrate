@@ -3,7 +3,7 @@
 //! These tests verify the complete flow from preset configuration through
 //! session creation, including git worktree creation and metadata file generation.
 //!
-//! The tests use DISPATCH_TEST_MODE to skip actual iTerm2 window spawning,
+//! The tests use ORCHESTRATE_TEST_MODE to skip actual iTerm2 window spawning,
 //! but everything else (git operations, file creation, metadata) is real.
 
 use std::fs;
@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // Import the library crate
-use dispatch::config::preset::Worktree;
-use dispatch::config::session;
-use dispatch::launcher;
+use orchestrate::config::preset::Worktree;
+use orchestrate::config::session;
+use orchestrate::launcher;
 
 /// Set up a local git repository for testing.
 /// Returns the path to the repos directory (parent of the repo).
@@ -97,7 +97,7 @@ fn create_test_options(
 #[test]
 fn e2e_preset_n_creates_correct_session_count() {
     // Enable test mode to skip osascript
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -136,7 +136,7 @@ fn e2e_preset_n_creates_correct_session_count() {
 /// This test shows what was happening before the fix.
 #[test]
 fn e2e_multiplier_one_overrides_preset_n() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -165,7 +165,7 @@ fn e2e_multiplier_one_overrides_preset_n() {
 /// This is the "parallel" preset scenario from the default settings.
 #[test]
 fn e2e_parallel_preset_creates_correct_sessions() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -206,7 +206,7 @@ fn e2e_parallel_preset_creates_correct_sessions() {
 /// Test that session metadata files are created correctly.
 #[test]
 fn e2e_session_metadata_is_created() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -240,7 +240,7 @@ fn e2e_session_metadata_is_created() {
 /// Test high n value preset.
 #[test]
 fn e2e_high_n_value_creates_many_sessions() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -266,7 +266,7 @@ fn e2e_high_n_value_creates_many_sessions() {
 /// It simulates exactly what the TUI does when launching with a preset.
 #[test]
 fn e2e_regression_tui_launch_respects_preset_n() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();
@@ -321,7 +321,7 @@ fn e2e_regression_tui_launch_respects_preset_n() {
 /// Test that git branches are created correctly for each worktree.
 #[test]
 fn e2e_git_branches_are_created() {
-    std::env::set_var("DISPATCH_TEST_MODE", "1");
+    std::env::set_var("ORCHESTRATE_TEST_MODE", "1");
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = temp_dir.path().to_path_buf();

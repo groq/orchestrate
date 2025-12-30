@@ -1,4 +1,4 @@
-# Dispatch configuration with presets
+# Orchestrate configuration with presets
 
 # Default preset to use when --preset is not specified
 default: claude

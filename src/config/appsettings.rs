@@ -109,7 +109,7 @@ impl Default for AppSettings {
     }
 }
 
-pub const APP_SETTINGS_FILE: &str = "dispatch.yaml";
+pub const APP_SETTINGS_FILE: &str = "orchestrate.yaml";
 
 pub fn default_app_settings() -> AppSettings {
     AppSettings::default()
@@ -136,7 +136,7 @@ pub fn load_app_settings(dir: &Path) -> Result<(AppSettings, PathBuf)> {
 pub fn save_app_settings(dir: &Path, settings: &AppSettings) -> Result<()> {
     let path = dir.join(APP_SETTINGS_FILE);
     let yaml = serde_yaml::to_string(settings)?;
-    let header = "# Dispatch App Settings\n# This file is auto-generated. Edit carefully.\n\n";
+    let header = "# Orchestrate App Settings\n# This file is auto-generated. Edit carefully.\n\n";
     fs::create_dir_all(dir)?;
     fs::write(&path, format!("{}{}", header, yaml))
         .with_context(|| format!("failed writing {}", path.display()))?;

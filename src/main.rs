@@ -1,14 +1,14 @@
-use dispatch::config::appsettings;
-use dispatch::config::preset::{self, Config as PresetConfig};
-use dispatch::launcher;
-use dispatch::tui;
-use dispatch::util;
+use orchestrate::config::appsettings;
+use orchestrate::config::preset::{self, Config as PresetConfig};
+use orchestrate::launcher;
+use orchestrate::tui;
+use orchestrate::util;
 use clap::Parser;
 use std::fs;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "dispatch",
+    name = "orchestrate",
     about = "Run AI coding agents in isolated git worktrees"
 )]
 struct Cli {
@@ -162,7 +162,7 @@ fn main() -> anyhow::Result<()> {
 fn print_cli_usage() {
     eprintln!("CLI mode requires --repo, --name, and --prompt");
     eprintln!();
-    eprintln!("Usage: dispatch --cli --repo <owner/repo> --name <branch> --prompt <prompt>");
+    eprintln!("Usage: orchestrate --cli --repo <owner/repo> --name <branch> --prompt <prompt>");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --repo <owner/repo>   GitHub repo to clone");
@@ -172,8 +172,8 @@ fn print_cli_usage() {
     eprintln!("  --n <count>           Multiplier for agent worktrees (optional)");
     eprintln!();
     eprintln!("Example:");
-    eprintln!("  dispatch --cli --repo owner/repo --name feature --prompt 'Fix bug'");
+    eprintln!("  orchestrate --cli --repo owner/repo --name feature --prompt 'Fix bug'");
     eprintln!();
     eprintln!("Or run without --cli to launch the TUI:");
-    eprintln!("  dispatch");
+    eprintln!("  orchestrate");
 }

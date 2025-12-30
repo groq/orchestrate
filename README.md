@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎭 Dispatch
+# 🎭 Orchestrate
 
 **Run AI coding agents, custom dev environments, or both — each in their own git worktree**
 
@@ -21,12 +21,12 @@ Now rewritten in **Rust** with a polished **Ratatui** interface.
 
 ## ⚡ Quick Start
 
-**1. Create `settings.yaml` in the Dispatch data directory:**
+**1. Create `settings.yaml` in the Orchestrate data directory:**
 
 The settings file goes in the platform-specific data directory:
-- **macOS:** `~/.dispatch/settings.yaml`
-- **Linux:** `~/.local/share/dispatch/settings.yaml`
-- **Windows:** `%APPDATA%\Dispatch\settings.yaml`
+- **macOS:** `~/.orchestrate/settings.yaml`
+- **Linux:** `~/.local/share/orchestrate/settings.yaml`
+- **Windows:** `%APPDATA%\Orchestrate\settings.yaml`
 
 ```yaml
 default: default
@@ -63,10 +63,10 @@ presets:
 
 ```bash
 # Use default preset
-dispatch --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue"
+orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue"
 
 # Or use the fullstack preset
-dispatch --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue" --preset fullstack
+orchestrate --repo groq/orion --name fix-bug --prompt "Fix the login timeout issue" --preset fullstack
 ```
 
 This clones/updates the repo from the main branch, creates isolated git worktrees, and launches agents/commands in separate iTerm2 panes.
@@ -126,7 +126,7 @@ presets:
 ```
 
 ```bash
-dispatch --repo myorg/myapp --name feature-auth --prompt "Add OAuth2 login"
+orchestrate --repo myorg/myapp --name feature-auth --prompt "Add OAuth2 login"
 ```
 
 ### 🔬 Evaluate Multiple Agents — Compare how droid/claude/codex solve the same problem
@@ -142,7 +142,7 @@ presets:
 ```
 
 ```bash
-dispatch --repo myorg/myapp --name eval-refactor --preset eval --prompt "Refactor the database layer"
+orchestrate --repo myorg/myapp --name eval-refactor --preset eval --prompt "Refactor the database layer"
 # Compare branches: eval-refactor-a3f2, eval-refactor-b7c1, eval-refactor-d9e4
 ```
 
@@ -158,7 +158,7 @@ presets:
 ```
 
 ```bash
-dispatch --repo myorg/myapp --name big-task --preset heavy --n 3 --prompt "Add comprehensive test coverage"
+orchestrate --repo myorg/myapp --name big-task --preset heavy --n 3 --prompt "Add comprehensive test coverage"
 # Creates 6 worktrees: 3 claude, 3 codex
 ```
 
@@ -208,13 +208,13 @@ track npm test
 track ./bin/dev-server
 ```
 
-`track` pipes stdout/stderr to the worktree's activity log (e.g. `~/.dispatch/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
+`track` pipes stdout/stderr to the worktree's activity log (e.g. `~/.orchestrate/activity/<branch>.log`) so the TUI activity stream stays clean even when you stop an agent and run custom commands.
 
 ---
 
 ## ⚙️ Configuration
 
-Create `settings.yaml` in the Dispatch data directory:
+Create `settings.yaml` in the Orchestrate data directory:
 
 ```yaml
 # settings.yaml
@@ -267,9 +267,9 @@ presets:
 4. **Parallel Execution** — Agents work simultaneously; compare branches and merge the best
 
 **Data Location:**
-- macOS: `~/.dispatch/`
-- Linux: `~/.local/share/dispatch/` (or `$XDG_DATA_HOME/dispatch`)
-- Windows: `%APPDATA%\Dispatch`
+- macOS: `~/.orchestrate/`
+- Linux: `~/.local/share/orchestrate/` (or `$XDG_DATA_HOME/orchestrate`)
+- Windows: `%APPDATA%\Orchestrate`
 
 Inside this directory:
 - `settings.yaml` — **Required.** Your presets configuration
@@ -279,10 +279,10 @@ Inside this directory:
 **Example Output:**
 
 ```
-⚙️  Settings: ~/.dispatch/settings.yaml
+⚙️  Settings: ~/.orchestrate/settings.yaml
 📦 Repo: groq/openbench
 🔄 Fetching latest from main branch...
-📂 Local path: ~/.dispatch/repos/groq-openbench
+📂 Local path: ~/.orchestrate/repos/groq-openbench
 🌿 Base branch: main
 💬 Prompt: Fix the authentication bug
 ✅ Created worktree: .../worktrees/groq-openbench-fix-auth-a3f2 (branch: fix-auth-a3f2, agent: codex)
@@ -297,7 +297,7 @@ Inside this directory:
 ## 📁 Project Structure
 
 ```
-dispatch/
+orchestrate/
 ├── Cargo.toml        # Rust package manifest
 ├── src/
 │   ├── main.rs       # CLI entry point (ui flag launches TUI)
@@ -306,7 +306,7 @@ dispatch/
 │   ├── git.rs        # Git worktree and status helpers
 │   ├── terminal.rs   # iTerm2 AppleScript/session grid logic
 │   ├── launcher.rs   # Worktree creation + session launching
-│   ├── config/       # settings.yaml + dispatch.yaml + session metadata
+│   ├── config/       # settings.yaml + orchestrate.yaml + session metadata
 │   └── tui/          # Ratatui-driven UI (worktrees, launch form, settings)
 ```
 

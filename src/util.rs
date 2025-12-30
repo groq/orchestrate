@@ -11,26 +11,26 @@ pub fn random_hex(n: usize) -> String {
     hex::encode(bytes)
 }
 
-/// Return the platform-appropriate data directory for dispatch, matching the Go version.
-/// - macOS: ~/.dispatch
-/// - Linux: ~/.local/share/dispatch (or $XDG_DATA_HOME/dispatch)
-/// - Windows: %APPDATA%\\Dispatch
+/// Return the platform-appropriate data directory for orchestrate, matching the Go version.
+/// - macOS: ~/.orchestrate
+/// - Linux: ~/.local/share/orchestrate (or $XDG_DATA_HOME/orchestrate)
+/// - Windows: %APPDATA%\\Orchestrate
 pub fn data_dir() -> Result<PathBuf> {
     let os = env::consts::OS;
     let base = match os {
-        "macos" => dirs_home().map(|h| h.join(".dispatch")),
+        "macos" => dirs_home().map(|h| h.join(".orchestrate")),
         "windows" => {
             if let Ok(appdata) = env::var("APPDATA") {
-                Some(PathBuf::from(appdata).join("Dispatch"))
+                Some(PathBuf::from(appdata).join("Orchestrate"))
             } else {
-                dirs_home().map(|h| h.join("AppData").join("Roaming").join("Dispatch"))
+                dirs_home().map(|h| h.join("AppData").join("Roaming").join("Orchestrate"))
             }
         }
         _ => {
             if let Ok(xdg) = env::var("XDG_DATA_HOME") {
-                Some(PathBuf::from(xdg).join("dispatch"))
+                Some(PathBuf::from(xdg).join("orchestrate"))
             } else {
-                dirs_home().map(|h| h.join(".local").join("share").join("dispatch"))
+                dirs_home().map(|h| h.join(".local").join("share").join("orchestrate"))
             }
         }
     };

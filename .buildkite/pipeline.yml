@@ -1,4 +1,4 @@
-# Buildkite pipeline for Dispatch (Rust)
+# Buildkite pipeline for Orchestrate (Rust)
 
 steps:
   - group: ":microscope: Test"

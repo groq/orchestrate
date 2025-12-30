@@ -1253,7 +1253,7 @@ impl App {
 
         let logo = Paragraph::new(Line::from(vec![
             Span::styled(
-                "Dispatch",
+                "Orchestrate",
                 Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             ),
             Span::styled(" by ", Style::default().fg(DIM_TEXT)),
