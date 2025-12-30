@@ -14,6 +14,17 @@
 
 ---
 
+## 📦 Installation
+
+```bash
+# from the repo root
+cargo install --path .
+```
+
+**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
+
+---
+
 ## ⚡ Quick Start
 
 **1. Create `settings.yaml` in the Orchestrate data directory:**
@@ -54,7 +65,21 @@ presets:
       n: 3
 ```
 
-**2. Run with a GitHub repo:**
+**2. Option A: Run via TUI**
+
+```bash
+# Open TUI
+orchestrate
+```
+
+<img width="1252" height="849" alt="Screenshot 2025-12-30 at 2 32 02 PM" src="https://github.com/user-attachments/assets/29155db0-6043-454c-9843-ff97dcd19f58" />
+
+<img width="1255" height="840" alt="Screenshot 2025-12-30 at 2 32 39 PM" src="https://github.com/user-attachments/assets/afceac54-011c-41e8-a9ef-09eecd5c8c37" />
+
+<br>
+<br>
+
+**3. Option B: Run via CLI:**
 
 ```bash
 # Use default preset
@@ -73,17 +98,6 @@ This clones/updates the repo from the main branch, creates isolated git worktree
 📦 **Clones/updates repo** → 📁 **Creates worktrees** → 🖥️ **Opens iTerm2 panes** → 🤖 **Launches agents** → ✨ **Parallel coding**
 
 </div>
-
----
-
-## 📦 Installation
-
-```bash
-# from the repo root
-cargo install --path .
-```
-
-**Requirements:** macOS with iTerm2, Rust toolchain, and your preferred AI coding agents installed.
 
 ---
 
