@@ -22,7 +22,7 @@ use ratatui::widgets::{
 };
 use ratatui::Terminal;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 type Frame<'a> = ratatui::Frame<'a>;
@@ -53,7 +53,7 @@ fn build_launch_options(
     prompt: &str,
     preset_name: &str,
     preset_config: Option<&PresetConfig>,
-    data_dir: &PathBuf,
+    data_dir: &Path,
     maximize_on_launch: bool,
 ) -> launcher::Options {
     let preset = preset_config
@@ -73,7 +73,7 @@ fn build_launch_options(
         // IMPORTANT: multiplier must be 0 to respect preset n values.
         // If multiplier > 0, it overrides all preset n values.
         multiplier: 0,
-        data_dir: data_dir.clone(),
+        data_dir: data_dir.to_path_buf(),
         preset,
         maximize_on_launch,
     }
@@ -2233,19 +2233,10 @@ impl App {
                 Style::default().fg(ACCENT),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                "Example:",
-                Style::default().fg(Color::White),
-            )),
+            Line::from(Span::styled("Example:", Style::default().fg(Color::White))),
             Line::from(""),
-            Line::from(Span::styled(
-                "presets:",
-                Style::default().fg(ACCENT),
-            )),
-            Line::from(Span::styled(
-                "  my-preset:",
-                Style::default().fg(ACCENT),
-            )),
+            Line::from(Span::styled("presets:", Style::default().fg(ACCENT))),
+            Line::from(Span::styled("  my-preset:", Style::default().fg(ACCENT))),
             Line::from(Span::styled(
                 "    - agent: claude",
                 Style::default().fg(Color::Rgb(150, 150, 160)),
@@ -2267,10 +2258,7 @@ impl App {
                 Style::default().fg(Color::Rgb(150, 150, 160)),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                "Fields:",
-                Style::default().fg(Color::White),
-            )),
+            Line::from(Span::styled("Fields:", Style::default().fg(Color::White))),
             Line::from(Span::styled(
                 "• agent: claude, codex, etc.",
                 Style::default().fg(DIM_TEXT),
@@ -2993,10 +2981,7 @@ mod tests {
 
         #[test]
         fn page_up_and_down_return_none() {
-            assert_eq!(
-                map_worktree_key(key(KeyCode::PageUp)),
-                WorktreeAction::None
-            );
+            assert_eq!(map_worktree_key(key(KeyCode::PageUp)), WorktreeAction::None);
             assert_eq!(
                 map_worktree_key(key(KeyCode::PageDown)),
                 WorktreeAction::None
@@ -3150,7 +3135,11 @@ mod tests {
                 false,
             );
 
-            assert_eq!(opts.preset.len(), 2, "parallel preset should have 2 worktrees");
+            assert_eq!(
+                opts.preset.len(),
+                2,
+                "parallel preset should have 2 worktrees"
+            );
             assert_eq!(opts.preset[0].n, 2, "first worktree should have n=2");
             assert_eq!(opts.preset[1].n, 2, "second worktree should have n=2");
         }

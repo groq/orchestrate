@@ -1,9 +1,9 @@
+use clap::Parser;
 use orchestrate::config::appsettings;
 use orchestrate::config::preset::{self, Config as PresetConfig};
 use orchestrate::launcher;
 use orchestrate::tui;
 use orchestrate::util;
-use clap::Parser;
 use std::fs;
 
 #[derive(Parser, Debug)]

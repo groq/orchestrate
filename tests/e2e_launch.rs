@@ -7,7 +7,7 @@
 //! but everything else (git operations, file creation, metadata) is real.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // Import the library crate
@@ -17,7 +17,7 @@ use orchestrate::launcher;
 
 /// Set up a local git repository for testing.
 /// Returns the path to the repos directory (parent of the repo).
-fn setup_test_git_repo(data_dir: &PathBuf) -> PathBuf {
+fn setup_test_git_repo(data_dir: &Path) -> PathBuf {
     let repos_dir = data_dir.join("repos");
     // The repo path format must match what ensure_repo() expects: {owner}-{repo}
     let test_repo_path = repos_dir.join("test-owner-test-repo");
@@ -51,8 +51,7 @@ fn setup_test_git_repo(data_dir: &PathBuf) -> PathBuf {
         .expect("Failed to configure git name");
 
     // Create a test file and commit
-    fs::write(test_repo_path.join("README.md"), "# Test Repo\n")
-        .expect("Failed to create README");
+    fs::write(test_repo_path.join("README.md"), "# Test Repo\n").expect("Failed to create README");
 
     Command::new("git")
         .args(["add", "."])
